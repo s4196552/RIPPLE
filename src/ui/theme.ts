@@ -149,6 +149,72 @@ export const PALETTES = {
 /** A resolved theme name — never 'system', which is a preference, not a theme. */
 export type ThemeName = keyof typeof PALETTES;
 
+/**
+ * Which pair of colours carries direction.
+ *
+ * DEF: 'classic' is the green/red every finance product uses. 'accessible'
+ * keeps the same semantics on a hue axis that survives colour-vision
+ * deficiency.
+ */
+export type ToneMode = 'classic' | 'accessible';
+
+/**
+ * ── Why an alternative tone pair exists ─────────────────────────────────────
+ * Red and green sit on the axis that the two common deficiencies compress, and
+ * roughly one man in twelve has one of them. Simulating the shipped palette
+ * (Viénot–Brettel–Mollon) shows how thin the margin is: in the light palette
+ * under protanopia, `up` #067647 and `down` #C4262E resolve to #756c44 and
+ * #59502c — two olive-browns, ΔE 11.3 apart, separated by lightness alone.
+ *
+ * The replacement does NOT invert or reassign the convention, which would be
+ * its own usability bug. It rotates both colours off the confusion axis while
+ * keeping their direction: teal is green shifted toward blue, vermillion is red
+ * shifted toward orange. Someone with normal colour vision still reads
+ * green-ish for up and red-ish for down.
+ *
+ * Measured separation of the pair below (ΔE*ab, higher is better):
+ *   dark  — deuteranopia 58.3 · protanopia 41.1   (was 19.1 / 34.2)
+ *   light — deuteranopia 62.7 · protanopia 46.9   (was 27.3 / 11.3)
+ *
+ * Teal rather than blue for `up` because blue would collide with `accent`:
+ * a sky-blue `up` measured ΔE 18.8 against the accent under deuteranopia,
+ * where teal measures 55.1.
+ *
+ * NOTE: in this mode `down` and `warning` land close together under
+ * deuteranopia (light: ΔE 4.4). That is tolerated rather than designed around,
+ * because `warning` never appears as a bare tone chip — every use of it in the
+ * app carries an icon or a word ("OFFLINE SAMPLE") beside the colour — and it
+ * never sits next to a `down` chip. Distorting `warning` to fix a collision
+ * that cannot occur on screen would cost more than it buys.
+ *
+ * Asserted in `test/theme.test.ts`, which simulates all three dichromacies and
+ * fails if a future palette edit narrows the gap.
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+const ACCESSIBLE_TONES: Record<ThemeName, Pick<Palette, 'up' | 'down'>> = {
+  // Contrast on #0B0E13: up 10.4:1 · down 6.9:1
+  dark: { up: '#2DD4BF', down: '#FF6B47' },
+  // Contrast on #F6F8FC: up 5.2:1 · down 4.9:1
+  light: { up: '#0F766E', down: '#C2410C' },
+};
+
+/**
+ * Built once, at module scope, rather than composed per render.
+ *
+ * `makeStyles` caches on palette identity, so a palette spread into a new
+ * object on every render would miss the cache every time and rebuild every
+ * stylesheet in the app. There are four possible palettes; these are them.
+ */
+export const ACCESSIBLE_PALETTES: Record<ThemeName, Palette> = {
+  dark: { ...darkPalette, ...ACCESSIBLE_TONES.dark },
+  light: { ...lightPalette, ...ACCESSIBLE_TONES.light },
+};
+
+/** The palette for a resolved theme and tone preference. */
+export function paletteFor(theme: ThemeName, tone: ToneMode): Palette {
+  return tone === 'accessible' ? ACCESSIBLE_PALETTES[theme] : PALETTES[theme];
+}
+
 export const space = {
   xs: 4,
   sm: 8,

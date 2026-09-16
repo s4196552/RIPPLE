@@ -20,6 +20,7 @@ export type {
   RefreshInterval,
   StartTab,
   ThemePreference,
+  TonePreference,
 } from './preferenceValues.ts';
 export { DEFAULT_PREFERENCES, pollIntervalMs, sanitize } from './preferenceValues.ts';
 
@@ -49,6 +50,7 @@ export const usePreferences = create<PreferencesState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         theme: state.theme,
+        tones: state.tones,
         haptics: state.haptics,
         refreshInterval: state.refreshInterval,
         startTab: state.startTab,

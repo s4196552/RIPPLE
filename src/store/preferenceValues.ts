@@ -9,6 +9,14 @@
 /** What the user picked, which is not the same as the theme being rendered. */
 export type ThemePreference = 'system' | 'dark' | 'light';
 
+/**
+ * Which colour pair carries direction.
+ *
+ * Mirrors `ToneMode` in `@/ui/theme`, redeclared here so the pure half of the
+ * preferences stays free of UI imports and testable on its own.
+ */
+export type TonePreference = 'classic' | 'accessible';
+
 /** Minutes between background polls, or 'off' to only refresh on demand. */
 export type RefreshInterval = 5 | 10 | 30 | 'off';
 
@@ -20,6 +28,13 @@ export type LinkTarget = 'in-app' | 'system';
 
 export interface Preferences {
   theme: ThemePreference;
+  /**
+   * Green/red, or a colour-vision-safe pair.
+   *
+   * Orthogonal to `theme` on purpose: someone can want light mode and the
+   * accessible tones, or either one on its own.
+   */
+  tones: TonePreference;
   /** Haptic feedback on press. Ignored on web, which has no haptics. */
   haptics: boolean;
   refreshInterval: RefreshInterval;
@@ -39,6 +54,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // defaulting to the device setting is the only choice that does not override
   // something the user already told their phone.
   theme: 'system',
+  // Classic by default: green/red is what every comparable product uses, and
+  // quietly reassigning it would confuse more people than it helps. The
+  // alternative is one tap away in Settings.
+  tones: 'classic',
   haptics: true,
   refreshInterval: 10,
   startTab: 'index',
@@ -52,6 +71,7 @@ export function pollIntervalMs(interval: RefreshInterval): number | null {
 }
 
 const THEMES: ThemePreference[] = ['system', 'dark', 'light'];
+const TONES: TonePreference[] = ['classic', 'accessible'];
 const INTERVALS: RefreshInterval[] = [5, 10, 30, 'off'];
 const START_TABS: StartTab[] = ['index', 'trades', 'timeline', 'watchlist'];
 const LINK_TARGETS: LinkTarget[] = ['in-app', 'system'];
@@ -69,6 +89,7 @@ export function sanitize(stored: unknown): Partial<Preferences> {
   const clean: Partial<Preferences> = {};
 
   if (THEMES.includes(raw.theme as ThemePreference)) clean.theme = raw.theme as ThemePreference;
+  if (TONES.includes(raw.tones as TonePreference)) clean.tones = raw.tones as TonePreference;
   if (typeof raw.haptics === 'boolean') clean.haptics = raw.haptics;
   if (INTERVALS.includes(raw.refreshInterval as RefreshInterval)) {
     clean.refreshInterval = raw.refreshInterval as RefreshInterval;

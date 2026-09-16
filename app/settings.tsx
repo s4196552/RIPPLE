@@ -2,10 +2,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { ALL_DESCRIPTORS, getProvider } from '@/providers/registry';
 import type { ProviderMode } from '@/providers/types';
+import { tapFeedback } from '@/lib/feedback';
 import { relativeTime } from '@/lib/time';
+import { iconName } from '@/ui/icons';
+import { usePreferences } from '@/store/preferences';
 import { useFeed } from '@/store/feed';
 import { useWatchlist } from '@/store/watchlist';
 import { SourceBadge } from '@/ui/components/SourceBadge';
@@ -30,6 +43,12 @@ export default function SettingsScreen() {
   const resetFeed = useFeed((s) => s.reset);
   const [cleared, setCleared] = useState(false);
 
+  const theme = usePreferences((s) => s.theme);
+  const tones = usePreferences((s) => s.tones);
+  const haptics = usePreferences((s) => s.haptics);
+  const dailyDigest = usePreferences((s) => s.dailyDigest);
+  const setPreference = usePreferences((s) => s.set);
+
   const paused = subjects.filter((s) => s.muted).length;
 
   const confirmClearCache = () => {
@@ -52,6 +71,53 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <Section title="Profile">
+        <Text style={styles.sectionNote}>
+          How this install is set up. There is no account — these stay on this device.
+        </Text>
+
+        <ChoiceRow
+          label="Theme"
+          value={theme}
+          onChange={(v) => setPreference('theme', v)}
+          options={[
+            { value: 'system', label: 'System' },
+            { value: 'dark', label: 'Dark' },
+            { value: 'light', label: 'Light' },
+          ]}
+        />
+
+        <ChoiceRow
+          label="Gains and losses"
+          value={tones}
+          onChange={(v) => setPreference('tones', v)}
+          options={[
+            { value: 'classic', label: 'Green / red' },
+            { value: 'accessible', label: 'Teal / orange' },
+          ]}
+          help={
+            tones === 'accessible'
+              ? 'Colours chosen to stay distinct with red-green colour blindness.'
+              : 'The usual pair. Hard to tell apart with red-green colour blindness.'
+          }
+          preview={<TonePreview />}
+        />
+
+        <SwitchRow
+          label="Group the feed by day"
+          value={dailyDigest}
+          onChange={(v) => setPreference('dailyDigest', v)}
+        />
+
+        <SwitchRow
+          label="Haptic feedback"
+          value={haptics}
+          onChange={(v) => setPreference('haptics', v)}
+          disabled={Platform.OS === 'web'}
+          help={Platform.OS === 'web' ? 'Not available in a browser.' : undefined}
+        />
+      </Section>
+
       <Section title="Sources">
         <Text style={styles.sectionNote}>
           Every source is public data. Nothing here is behind a login, and nothing you follow
@@ -149,6 +215,146 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/**
+ * A small set of mutually exclusive options, laid out as pills.
+ *
+ * `radiogroup` / `radio` rather than a row of buttons: it is what tells a
+ * screen reader that picking one un-picks the others, and it announces
+ * "2 of 3" so the size of the choice is known without hearing every option.
+ */
+function ChoiceRow<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+  help,
+  preview,
+}: {
+  label: string;
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: string }[];
+  help?: string;
+  preview?: React.ReactNode;
+}) {
+  const styles = useStyles();
+
+  return (
+    <View style={styles.choiceBlock}>
+      <View style={styles.choiceHeader}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {preview}
+      </View>
+
+      <View style={styles.choiceGroup} accessibilityRole="radiogroup" accessibilityLabel={label}>
+        {options.map((option) => {
+          const selected = option.value === value;
+          return (
+            <Pressable
+              key={option.value}
+              onPress={() => {
+                tapFeedback();
+                onChange(option.value);
+              }}
+              style={({ pressed }) => [
+                styles.choice,
+                selected && styles.choiceSelected,
+                pressed && styles.rowPressed,
+              ]}
+              accessibilityRole="radio"
+              /*
+               * Both, deliberately.
+               *
+               * A radio's state is checkedness, not selectedness, so
+               * `accessibilityState.checked` is what native needs. But
+               * react-native-web rendered this element with `role="radio"` and
+               * no `aria-checked` at all from either `selected` or `checked` —
+               * a screen reader named every option and never said which one
+               * was chosen. `aria-checked` is a cross-platform prop since RN
+               * 0.71 and is what actually reaches the DOM.
+               */
+              accessibilityState={{ checked: selected }}
+              aria-checked={selected}
+              accessibilityLabel={option.label}
+            >
+              <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Announced on change, because the copy is what explains the choice the
+          user just made and nothing else on screen says it. */}
+      {help ? (
+        <Text style={styles.help} accessibilityLiveRegion="polite">
+          {help}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Live swatches for the current tone pair.
+ *
+ * The words "teal" and "orange" mean nothing next to the actual colours, and
+ * this is the one setting whose whole point is what it looks like. Marked
+ * decorative: the choice is already announced by the radio it sits beside.
+ */
+function TonePreview() {
+  const c = useTheme();
+  const styles = useStyles();
+
+  return (
+    <View style={styles.swatches} accessibilityElementsHidden importantForAccessibility="no">
+      <View style={[styles.swatch, { backgroundColor: c.up }]} />
+      <View style={[styles.swatch, { backgroundColor: c.down }]} />
+    </View>
+  );
+}
+
+function SwitchRow({
+  label,
+  value,
+  onChange,
+  disabled = false,
+  help,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+  disabled?: boolean;
+  help?: string;
+}) {
+  const c = useTheme();
+  const styles = useStyles();
+
+  return (
+    <View style={styles.switchBlock}>
+      <View style={styles.switchRow}>
+        <Text style={[styles.rowLabel, disabled && styles.disabledText]}>{label}</Text>
+        <Switch
+          value={value}
+          onValueChange={(next) => {
+            tapFeedback();
+            onChange(next);
+          }}
+          disabled={disabled}
+          trackColor={{ false: c.surfaceAlt, true: c.accent }}
+          thumbColor={c.onAccent}
+          ios_backgroundColor={c.surfaceAlt}
+          accessibilityRole="switch"
+          accessibilityLabel={label}
+          accessibilityState={{ checked: value, disabled }}
+        />
+      </View>
+      {help ? <Text style={styles.help}>{help}</Text> : null}
+    </View>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   const styles = useStyles();
   return (
@@ -181,7 +387,7 @@ function PageRow({ icon, label, href }: { icon: string; label: string; href: '/t
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Ionicons name={icon as never} size={16} color={c.textMuted} />
+      <Ionicons name={iconName(icon)} size={16} color={c.textMuted} />
       <Text style={styles.linkLabel}>{label}</Text>
       <Ionicons name="chevron-forward" size={14} color={c.textFaint} />
     </Pressable>
@@ -205,7 +411,7 @@ function LinkRow({ icon, label, url }: { icon: string; label: string; url: strin
       accessibilityRole="link"
       accessibilityLabel={`${label}. Opens in a browser.`}
     >
-      <Ionicons name={icon as never} size={16} color={c.textMuted} />
+      <Ionicons name={iconName(icon)} size={16} color={c.textMuted} />
       <Text style={styles.linkLabel}>{label}</Text>
       <Ionicons name="open-outline" size={14} color={c.textFaint} />
     </Pressable>
@@ -311,6 +517,73 @@ const useStyles = makeStyles((c) => ({
   },
   rowPressed: {
     backgroundColor: c.surfaceAlt,
+  },
+  choiceBlock: {
+    gap: space.sm,
+    paddingVertical: space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.border,
+  },
+  choiceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.sm,
+  },
+  choiceGroup: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+  },
+  choice: {
+    paddingHorizontal: space.md,
+    // 10 + the label's line box clears the 44pt minimum target without making
+    // a row of three pills taller than the rows around it.
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    backgroundColor: c.surfaceAlt,
+  },
+  choiceSelected: {
+    backgroundColor: tint(c.accent, 0.16),
+    borderColor: c.accent,
+  },
+  choiceText: {
+    ...type.caption,
+    color: c.textMuted,
+  },
+  choiceTextSelected: {
+    color: c.accent,
+  },
+  swatches: {
+    flexDirection: 'row',
+    gap: space.xs,
+  },
+  swatch: {
+    width: 22,
+    height: 14,
+    borderRadius: radius.sm,
+  },
+  switchBlock: {
+    paddingVertical: space.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.border,
+    gap: space.xs,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.md,
+  },
+  disabledText: {
+    color: c.textFaint,
+  },
+  help: {
+    ...type.caption,
+    color: c.textSubtle,
+    lineHeight: 17,
   },
   rowLabel: {
     ...type.bodyTight,

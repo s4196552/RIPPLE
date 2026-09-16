@@ -42,6 +42,7 @@ describe('sanitize', () => {
   it('keeps every valid value', () => {
     const stored: Preferences = {
       theme: 'light',
+      tones: 'accessible',
       haptics: false,
       refreshInterval: 30,
       startTab: 'trades',

@@ -7,7 +7,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { usePreferences } from '@/store/preferences';
-import { PALETTES, darkPalette, type Palette, type ThemeName } from './theme';
+import { darkPalette, paletteFor, type Palette, type ThemeName } from './theme';
 
 /**
  * Runtime theming.
@@ -25,6 +25,7 @@ const ThemeNameContext = createContext<ThemeName>('dark');
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const preference = usePreferences((s) => s.theme);
+  const tones = usePreferences((s) => s.tones);
   // `useColorScheme` re-renders on OS theme changes, so 'system' tracks the
   // device live rather than only at launch.
   const system = useColorScheme();
@@ -32,7 +33,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const name: ThemeName =
     preference === 'system' ? (system === 'light' ? 'light' : 'dark') : preference;
 
-  const palette = PALETTES[name];
+  // Two independent axes — light/dark, and which pair of colours means up and
+  // down — so the palette is looked up by both rather than by theme alone.
+  const palette = paletteFor(name, tones);
 
   return (
     <ThemeNameContext.Provider value={name}>

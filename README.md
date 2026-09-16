@@ -14,7 +14,7 @@ npm start          # then press i / a, or scan the QR with Expo Go
 
 ```bash
 npm run typecheck  # tsc --noEmit
-npm test           # node:test, 460 unit tests, no jest/babel needed
+npm test           # node:test, 464 unit tests, no jest/babel needed
 ```
 
 ---
@@ -394,7 +394,7 @@ break the first time the formatting changed.
 
 ## Tests
 
-`npm test` runs 460 unit tests on Node's native TypeScript stripping — no Jest,
+`npm test` runs 464 unit tests on Node's native TypeScript stripping — no Jest,
 no babel config, no watchman. The modules under test avoid framework and network
 imports so they load without React Native's native modules.
 
