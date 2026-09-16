@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.DS_Store
+
+# Local secrets — API keys for the providers. Never commit.
+.env
+.env.local
