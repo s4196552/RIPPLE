@@ -3,8 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ALL_DESCRIPTORS } from '@/providers/registry';
 import type { SourceId } from '@/providers/types';
 import { iconName } from '../icons';
-import { makeStyles, useTheme } from '../ThemeProvider';
+import { makeStyles, useTheme, useThemeName } from '../ThemeProvider';
 import { radius, space, tint, type } from '../theme';
+import { sourceFill } from '../sourceFill';
 
 interface Props {
   hidden: SourceId[];
@@ -20,6 +21,7 @@ interface Props {
 export function FilterChips({ hidden, onToggle, counts }: Props) {
   const c = useTheme();
   const styles = useStyles();
+  const themeName = useThemeName();
   return (
     <ScrollView
       horizontal
@@ -30,6 +32,10 @@ export function FilterChips({ hidden, onToggle, counts }: Props) {
       {ALL_DESCRIPTORS.map((s) => {
         const off = hidden.includes(s.id);
         const count = counts[s.id] ?? 0;
+        // Solid when on. The light theme uses its own darker fill per source —
+        // the bright descriptor colours have almost no presence on a near-white
+        // page. See `sourceFill` for the measurements.
+        const fill = sourceFill(s.id, s.color, themeName);
 
         return (
           <Pressable
@@ -38,9 +44,7 @@ export function FilterChips({ hidden, onToggle, counts }: Props) {
             hitSlop={{ top: space.sm, bottom: space.sm }}
             style={[
               styles.chip,
-              off
-                ? styles.chipOff
-                : { backgroundColor: tint(s.color, 0.15), borderColor: tint(s.color, 0.4) },
+              off ? styles.chipOff : { backgroundColor: fill, borderColor: fill },
             ]}
             accessibilityRole="switch"
             accessibilityState={{ checked: !off }}
@@ -48,17 +52,23 @@ export function FilterChips({ hidden, onToggle, counts }: Props) {
             // out loud here or it's invisible to assistive tech.
             accessibilityLabel={`${s.label} filter, ${count} signal${count === 1 ? '' : 's'}`}
           >
-            <Ionicons name={iconName(s.icon)} size={13} color={off ? c.textMuted : s.color} />
-            <Text style={[styles.chipText, { color: off ? c.textMuted : s.color }]}>
+            {/* `onAccent` is the token for text on a filled surface: near-black
+                in dark, white in light — which is the right direction for both
+                fills. White on the bright originals would measure 1.87–3.23:1
+                and fail everywhere. */}
+            <Ionicons name={iconName(s.icon)} size={13} color={off ? c.textMuted : c.onAccent} />
+            <Text style={[styles.chipText, { color: off ? c.textMuted : c.onAccent }]}>
               {s.label}
             </Text>
             <View
               style={[
                 styles.count,
-                { backgroundColor: off ? c.surfaceAlt : tint(s.color, 0.22) },
+                // A wash of the text colour over the fill, so the pill reads as
+                // part of the chip rather than a second object stuck on it.
+                { backgroundColor: off ? c.surfaceAlt : tint(c.onAccent, 0.2) },
               ]}
             >
-              <Text style={[styles.countText, { color: off ? c.textMuted : s.color }]}>
+              <Text style={[styles.countText, { color: off ? c.textMuted : c.onAccent }]}>
                 {count}
               </Text>
             </View>
