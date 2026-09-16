@@ -16,12 +16,14 @@ import {
 } from 'react-native';
 import { refreshFeed } from '@/hooks/useFeedSync';
 import { describe } from '@/providers/registry';
+import { isStarterFeed } from '@/store/defaults';
 import { dayHeadline, dayLabel, daySummary, groupByDay, type DigestDay } from '@/lib/digest';
 import { relativeTime } from '@/lib/time';
 import type { Signal, SourceId } from '@/providers/types';
 import { countBySource, useFeed, visibleSignals } from '@/store/feed';
 import { useWatchlist } from '@/store/watchlist';
 import { EmptyState } from '@/ui/components/EmptyState';
+import { StarterNotice } from '@/ui/components/StarterNotice';
 import { FilterChips } from '@/ui/components/FilterChips';
 import { SignalCard } from '@/ui/components/SignalCard';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
@@ -128,23 +130,22 @@ export default function FeedScreen() {
     );
   }
 
-  if (subjects.length === 0) {
-    return (
-      <View style={styles.container}>
-        <EmptyState
-          icon="pulse-outline"
-          title="No signals yet"
-          body="Follow members of Congress, companies whose insiders you want to watch, and the policy topics that move them. Everything lands here, newest first."
-          action={{ label: 'Add your first subject', onPress: () => router.push('/add') }}
-        />
-      </View>
-    );
-  }
-
+  /*
+   * No early return for an empty watchlist.
+   *
+   * An empty watchlist used to mean an empty screen behind a button, which asks
+   * a new user to take on faith that following something produces anything.
+   * `useFeedSync` substitutes the starter set instead, so there are real
+   * filings here on a fresh install — and `StarterNotice` says so, because a
+   * starter feed is only defensible if it is labelled as one.
+   */
+  const starter = isStarterFeed(subjects);
   const showErrors = errors.length > 0 && !errorsDismissed;
 
   return (
     <View style={styles.container}>
+      {starter && <StarterNotice onPress={() => router.push('/add')} />}
+
       <FilterChips hidden={hidden} onToggle={toggleSource} counts={counts} />
 
       {showErrors && (

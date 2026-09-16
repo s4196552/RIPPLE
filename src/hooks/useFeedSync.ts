@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
+import { feedSubjects } from '@/store/defaults';
 import { useFeed } from '@/store/feed';
 import { useWatchlist } from '@/store/watchlist';
 
@@ -47,11 +48,18 @@ export function useFeedSync() {
   const hydrated = useWatchlist((s) => s.hydrated) && useFeed((s) => s.hydrated);
 
   /**
+   * What to fetch.
+   *
+   * `feedSubjects` substitutes the starter set when the watchlist is empty, so
+   * a fresh install has a populated feed instead of four empty tabs.
+   *
    * Muted subjects are excluded from fetching entirely — mute means "stop
    * spending requests on this". Source chips, by contrast, filter at render
-   * time so toggling one is instant.
+   * time so toggling one is instant. Muting is applied after the substitution,
+   * so a user who mutes everything they follow gets the empty feed they asked
+   * for rather than the starter set back.
    */
-  const fetchable = subjects.filter((s) => !s.muted);
+  const fetchable = feedSubjects(subjects).filter((s) => !s.muted);
 
   // Identity of the fetch set, so the effect re-runs on add/remove/mute but not
   // on unrelated store writes.

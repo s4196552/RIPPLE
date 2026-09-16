@@ -13,6 +13,7 @@ import {
 } from '@/lib/timeline';
 import { makeStyles, useTheme } from '../ThemeProvider';
 import { radius, space, tapSlop, tint, type } from '../theme';
+import { toneShape, toneWord } from '../tone';
 
 interface Props {
   signals: Signal[];
@@ -122,6 +123,40 @@ export function SignalTimeline({ signals, onSelect, title }: Props) {
                       ? c.down
                       : meta.color;
 
+                /*
+                 * Shape carries direction, not just colour.
+                 *
+                 * A marker is the one place in the app with no room for a label
+                 * or a sign, so the colour was doing the work alone — a WCAG
+                 * 1.4.1 failure, and the only real one left. The dot now points
+                 * the way the cluster points, using the same two triangles the
+                 * chips use, and a cluster with no direction stays a circle.
+                 */
+                const shape = toneShape(cluster.tone);
+                const half = size / 2;
+                const solid =
+                  shape === 'circle'
+                    ? {
+                        width: size,
+                        height: size,
+                        borderRadius: half,
+                        borderWidth: 1,
+                        borderColor: color,
+                        backgroundColor: tint(color, 0.9),
+                      }
+                    : {
+                        width: 0,
+                        height: 0,
+                        backgroundColor: 'transparent',
+                        borderLeftWidth: half,
+                        borderRightWidth: half,
+                        borderLeftColor: 'transparent',
+                        borderRightColor: 'transparent',
+                        ...(shape === 'triangle-up'
+                          ? { borderBottomWidth: size, borderBottomColor: color }
+                          : { borderTopWidth: size, borderTopColor: color }),
+                      };
+
                 return (
                   <Pressable
                     key={`${cluster.at}-${cluster.signals[0]?.id}`}
@@ -132,10 +167,7 @@ export function SignalTimeline({ signals, onSelect, title }: Props) {
                       {
                         width: size,
                         height: size,
-                        borderRadius: size / 2,
-                        backgroundColor: tint(color, 0.9),
-                        borderColor: color,
-                        // Centre the dot on its date rather than starting there.
+                        // Centre the mark on its date rather than starting there.
                         left: Math.max(
                           0,
                           Math.min(trackWidth - size, cluster.position * trackWidth - size / 2),
@@ -144,17 +176,36 @@ export function SignalTimeline({ signals, onSelect, title }: Props) {
                       },
                     ]}
                     accessibilityRole="button"
-                    // The dot's colour, size and position are the whole message
-                    // visually, so the label has to carry all three in words.
+                    // The mark's shape, colour, size and position are the whole
+                    // message visually, so the label carries all of them in words.
                     accessibilityLabel={
                       `${meta.label}, ${clusterDateLabel(cluster, window)}. ` +
+                      `${toneWord(cluster.tone) ? `${toneWord(cluster.tone)}. ` : ''}` +
                       (count > 1
                         ? `${count} signals. Latest: ${cluster.signals[0]?.text ?? ''}`
                         : (cluster.signals[0]?.text ?? ''))
                     }
                     accessibilityHint="Opens the filing"
                   >
-                    {count > 1 && <Text style={styles.markerCount}>{count}</Text>}
+                    <View style={solid} />
+
+                    {/* Seated at the triangle's wide end, where there is room
+                        for it — a digit centred on a triangle sits half outside
+                        the shape. */}
+                    {count > 1 && (
+                      <Text
+                        style={[
+                          styles.markerCount,
+                          shape === 'triangle-up'
+                            ? { bottom: 0 }
+                            : shape === 'triangle-down'
+                              ? { top: 0 }
+                              : null,
+                        ]}
+                      >
+                        {count}
+                      </Text>
+                    )}
                   </Pressable>
                 );
               })}
@@ -271,11 +322,11 @@ const useStyles = makeStyles((c) => ({
   marker: {
     position: 'absolute',
     top: '50%',
-    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   markerCount: {
+    position: 'absolute',
     fontSize: 8,
     fontWeight: '700',
     color: c.bg,

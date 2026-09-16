@@ -55,7 +55,11 @@ export default function TimelineScreen() {
 
   if (!hydrated) return <View style={styles.screen} />;
 
-  if (subjects.length === 0 || shown.length === 0) {
+  // Guarded on content, not on the watchlist — the way the trades tab already
+  // does it. An empty watchlist still has signals when the starter feed is
+  // standing in for one, and blocking on `subjects` showed "nothing here" over
+  // a store that was full.
+  if (shown.length === 0) {
     return (
       <View style={styles.screen}>
         <EmptyState
@@ -84,8 +88,9 @@ export default function TimelineScreen() {
 
       <View style={styles.legend}>
         <Text style={styles.legendText}>
-          Each dot is a filing; a numbered dot is several within a few days. Green and red mark
-          disclosed buys and sells.
+          Each mark is a filing; a numbered one is several within a few days. Triangles point the
+          way a disclosed trade went — up for buys, down for sells — and a circle means no single
+          direction.
         </Text>
         {lastUpdated ? (
           <Text style={styles.legendMeta}>Updated {relativeTime(lastUpdated)} ago</Text>

@@ -20,8 +20,8 @@ import { useWatchlist } from '@/store/watchlist';
 import { Avatar } from '@/ui/components/Avatar';
 import { EmptyState } from '@/ui/components/EmptyState';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import type { Palette } from '@/ui/theme';
 import { radius, space, tapSlop, tint, type } from '@/ui/theme';
+import { markedLabel, toneColor, type Tone } from '@/ui/tone';
 
 /**
  * Disclosed transactions as a table, plus what the watched group traded most.
@@ -113,8 +113,15 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (url: string) => vo
   const buy = trade.action === 'buy';
   const tone = row.quality ? qualityTone(row.quality) : 'neutral';
 
-  const returnText =
+  // Direction of the return itself, which is not the same as `tone` above —
+  // that one grades the timing of the decision, this one is just the number.
+  const returnTone: Tone = row.changePct === null ? 'neutral' : row.changePct >= 0 ? 'up' : 'down';
+
+  // Two forms: the marked one is drawn, the plain one is spoken. A screen
+  // reader renders `▲` as "black up-pointing triangle", so it never hears it.
+  const returnValue =
     row.changePct === null ? '—' : `${row.changePct >= 0 ? '+' : ''}${row.changePct.toFixed(2)}%`;
+  const returnText = markedLabel(returnTone, returnValue);
 
   return (
     <Pressable
@@ -128,7 +135,7 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (url: string) => vo
         `${trade.discretionary ? (buy ? 'Bought' : 'Sold') : trade.kindLabel} ` +
         `${trade.assetName || row.ticker}, ${row.assetType}. ` +
         `${trade.amountLabel ?? 'Amount undisclosed'}. ${relativeTime(row.timestamp)} ago. ` +
-        `Return ${row.changePct === null ? 'unavailable' : returnText}. ` +
+        `Return ${row.changePct === null ? 'unavailable' : returnValue}. ` +
         `${
           row.quality
             ? qualityLabel(row.quality)
@@ -212,9 +219,7 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (url: string) => vo
           <Text
             style={[
               styles.returnText,
-              row.changePct === null
-                ? { color: c.textMuted }
-                : { color: row.changePct >= 0 ? c.up : c.down },
+              { color: toneColor(returnTone, c) },
             ]}
           >
             {returnText}
@@ -277,12 +282,6 @@ function HoldingRow({ holding, rank }: { holding: AssetHolding; rank: number }) 
 /** `GRANT / AWARD` -> `GRANT`, so the chip stays one short word. */
 function shortKind(kindLabel: string): string {
   return (kindLabel.split('/')[0] ?? kindLabel).trim().split(' ')[0] ?? kindLabel;
-}
-
-function toneColor(tone: 'up' | 'down' | 'neutral', c: Palette): string {
-  if (tone === 'up') return c.up;
-  if (tone === 'down') return c.down;
-  return c.textMuted;
 }
 
 const useStyles = makeStyles((c) => ({

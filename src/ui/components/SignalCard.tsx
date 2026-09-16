@@ -4,8 +4,8 @@ import { describe } from '@/providers/registry';
 import type { Signal } from '@/providers/types';
 import { relativeTime, spokenTime } from '@/lib/time';
 import { makeStyles, useTheme } from '../ThemeProvider';
-import type { Palette } from '../theme';
 import { radius, space, tint, type } from '../theme';
+import { markedLabel, spokenLabel, toneColor } from '../tone';
 import { Avatar } from './Avatar';
 import { SourceBadge } from './SourceBadge';
 
@@ -63,7 +63,7 @@ export const SignalCard = memo(
           accessibilityLabel={
             `${source.label}, ${spokenTime(signal.timestamp)}. ` +
             `${signal.text}` +
-            `${signal.accent ? ` ${signal.accent.label}.` : ''}` +
+            `${signal.accent ? ` ${spokenLabel(signal.accent.tone, signal.accent.label)}.` : ''}` +
             `${signal.badges?.length ? ` ${signal.badges.join('. ')}.` : ''}`
           }
           accessibilityHint="Opens the original filing"
@@ -96,7 +96,7 @@ export const SignalCard = memo(
                 ]}
               >
                 <Text style={[styles.chipText, { color: toneColor(signal.accent.tone, c) }]}>
-                  {signal.accent.label}
+                  {markedLabel(signal.accent.tone, signal.accent.label)}
                 </Text>
               </View>
             )}
@@ -139,12 +139,6 @@ function sameBadges(a: string[] | undefined, b: string[] | undefined): boolean {
   if (a === b) return true;
   if (!a || !b || a.length !== b.length) return false;
   return a.every((badge, i) => badge === b[i]);
-}
-
-function toneColor(tone: 'up' | 'down' | 'neutral', c: Palette): string {
-  if (tone === 'up') return c.up;
-  if (tone === 'down') return c.down;
-  return c.textMuted;
 }
 
 const useStyles = makeStyles((c) => ({
