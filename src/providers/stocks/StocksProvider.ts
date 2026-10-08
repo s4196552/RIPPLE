@@ -27,9 +27,10 @@ import { deriveEvents, normalizeTickerEvent, type Series, type TickerEvent } fro
  * KNOWN LIMITS, and what to do about each:
  *
  *   • Yahoo sends no CORS headers, so these calls succeed on iOS/Android but
- *     are blocked by the browser on `expo start --web`. The web build falls
- *     back to the synthetic series below. Native is the real target; if you
- *     need web, proxy these two endpoints through your own backend.
+ *     are blocked by the browser on `expo start --web`, where the Stocks source
+ *     reports a refresh failure. Native is the real target; if you need web,
+ *     proxy these two endpoints through your own backend. For a UI-only session
+ *     on web, `EXPO_PUBLIC_DEMO_PRICES=1` substitutes a labelled sample series.
  *
  *   • Yahoo is undocumented and rate-limits under load. Set
  *     `EXPO_PUBLIC_FINNHUB_API_KEY` to route through Finnhub instead
@@ -40,6 +41,19 @@ import { deriveEvents, normalizeTickerEvent, type Series, type TickerEvent } fro
  * ═══════════════════════════════════════════════════════════════════════════
  */
 const FINNHUB_KEY = process.env.EXPO_PUBLIC_FINNHUB_API_KEY?.trim() || '';
+
+/**
+ * Opt-in sample prices for UI work where the price endpoints are unreachable.
+ *
+ * Off by default, and never reaches `loadSeries`: invented closes on a ticker's
+ * own card are a placeholder, but the same closes behind a congressional or
+ * insider trade would put a fabricated outcome — and a "Sold high" verdict —
+ * next to a real person's name.
+ */
+const DEMO_PRICES = process.env.EXPO_PUBLIC_DEMO_PRICES === '1';
+
+/** Badge on every card built from the sample series, so it can't pass as data. */
+export const SAMPLE_BADGE = 'SAMPLE DATA';
 
 const YAHOO_SEARCH = 'https://query1.finance.yahoo.com/v1/finance/search';
 const YAHOO_CHART = 'https://query1.finance.yahoo.com/v8/finance/chart';
@@ -166,10 +180,14 @@ async function fetchFinnhubSeries(symbol: string, signal?: AbortSignal): Promise
   };
 }
 
+/** Where every synthetic walk starts, so a given date always gets the same close. */
+const SYNTHETIC_EPOCH = Date.UTC(2024, 0, 1);
+
 /**
- * Deterministic random-walk fallback, reached only when the network path fails
- * (web CORS, rate limit, offline). Seeded by symbol so the same ticker always
- * yields the same series: refreshes stay stable and post ids stay dedupable.
+ * Deterministic random-walk sample, reached only with `DEMO_PRICES` on and the
+ * network path failing (web CORS, rate limit, offline). Seeded by symbol so the
+ * same ticker always yields the same series: refreshes stay stable and post ids
+ * stay dedupable.
  */
 function syntheticSeries(symbol: string): Series {
   const rand = seededRandom(hashString(symbol.toUpperCase()));
@@ -179,18 +197,27 @@ function syntheticSeries(symbol: string): Series {
 
   let price = 40 + (hashString(symbol) % 400);
   const dayMs = 24 * 60 * 60 * 1000;
-  // Anchor to UTC midnight so timestamps don't drift between calls.
-  const today = Math.floor(Date.now() / dayMs) * dayMs;
+  const now = Date.now();
+  const today = Math.floor(now / dayMs) * dayMs;
 
-  for (let i = 63; i >= 0; i--) {
-    const date = new Date(today - i * dayMs);
-    const weekday = date.getUTCDay();
+  // Walk from a fixed epoch, not from "63 days ago". Starting the walk at a
+  // moving point replayed the same numbers one session later each day, and the
+  // cached copy from yesterday sat beside today's — every move appeared twice,
+  // a day apart. From a fixed start, a date's close never changes.
+  for (let day = SYNTHETIC_EPOCH; day <= today; day += dayMs) {
+    const weekday = new Date(day).getUTCDay();
     if (weekday === 0 || weekday === 6) continue;
 
     price = Math.max(1, price * (1 + (rand() - 0.485) * 0.045));
-    times.push(date.getTime() + 20 * 60 * 60 * 1000); // ~16:00 ET close
+    const volume = Math.floor(2_000_000 + rand() * 40_000_000);
+    const close = day + 20 * 60 * 60 * 1000; // ~16:00 ET close
+
+    // Today's session only exists once it has closed; before that it was a
+    // card dated "now" for a close still hours away.
+    if (day < today - 63 * dayMs || close > now) continue;
+    times.push(close);
     closes.push(price);
-    volumes.push(Math.floor(2_000_000 + rand() * 40_000_000));
+    volumes.push(volume);
   }
 
   return { symbol: symbol.toUpperCase(), currency: 'USD', times, closes, volumes };
@@ -238,26 +265,41 @@ async function fetchRemoteMatches(term: string, signal?: AbortSignal): Promise<S
   return fetchYahooSearch(term, signal);
 }
 
-/** Tracks whether the last network attempt worked, so `mode()` can be honest. */
-let lastFetchWasReal = true;
+/**
+ * Tickers whose Stocks cards are currently built from the sample, so `mode()`
+ * can be honest. Per ticker: a later real load of another symbol must not hide
+ * the sample cards still on screen.
+ */
+const sampleSymbols = new Set<string>();
 
 /**
  * Shared daily-series loader. Exported because the price *reaction* shown on
  * congress and insider signals ("what the stock did after") needs the same
  * data — see `./reaction.ts`.
+ *
+ * Real prices or a thrown error, never anything in between. Both reaction
+ * callers already treat a failure as "no reaction", which is the only honest
+ * outcome: a fallback series here once produced invented returns and timing
+ * verdicts on named people whenever Yahoo rate-limited.
  */
 export async function loadSeries(symbol: string, signal?: AbortSignal): Promise<Series> {
+  return FINNHUB_KEY ? fetchFinnhubSeries(symbol, signal) : fetchYahooSeries(symbol, signal);
+}
+
+/** The Stocks source's own loader: real prices, or the labelled sample when opted in. */
+async function loadTickerSeries(
+  symbol: string,
+  signal?: AbortSignal,
+): Promise<{ series: Series; sample: boolean }> {
   try {
-    const series = FINNHUB_KEY
-      ? await fetchFinnhubSeries(symbol, signal)
-      : await fetchYahooSeries(symbol, signal);
-    lastFetchWasReal = true;
-    return series;
+    const series = await loadSeries(symbol, signal);
+    sampleSymbols.delete(symbol);
+    return { series, sample: false };
   } catch (err) {
-    if (isAbort(err)) throw err;
-    lastFetchWasReal = false;
-    console.warn(`[stocks] live fetch failed for ${symbol}, using synthetic series:`, err);
-    return syntheticSeries(symbol);
+    if (isAbort(err) || !DEMO_PRICES) throw err;
+    sampleSymbols.add(symbol);
+    console.warn(`[stocks] live fetch failed for ${symbol}, using the sample series:`, err);
+    return { series: syntheticSeries(symbol), sample: true };
   }
 }
 
@@ -280,14 +322,14 @@ export const StocksProvider: Provider<TickerEvent> = {
   label: 'Stocks',
   sigil: '$',
   color: '#3FD68C',
-  icon: 'trending-up',
+  icon: 'stats-chart',
   blurb: 'Price moves and volume spikes for tickers you track',
   subjectNoun: 'a ticker',
   provenance: 'Yahoo Finance, no key required',
 
   mode(): ProviderMode {
-    if (FINNHUB_KEY) return 'live';
-    return lastFetchWasReal ? 'public' : 'mock';
+    if (sampleSymbols.size > 0) return 'mock';
+    return FINNHUB_KEY ? 'live' : 'public';
   },
 
   async searchSubjects(query: string, signal?: AbortSignal): Promise<SubjectResult[]> {
@@ -322,7 +364,7 @@ export const StocksProvider: Provider<TickerEvent> = {
 
   async getSignals(handle: string, options: GetSignalsOptions = {}): Promise<Signal[]> {
     const symbol = handle.replace(/^\$/, '').toUpperCase();
-    const series = await loadSeries(symbol, options.signal);
+    const { series, sample } = await loadTickerSeries(symbol, options.signal);
 
     const actor: Actor = {
       handle: series.symbol,
@@ -337,7 +379,11 @@ export const StocksProvider: Provider<TickerEvent> = {
       events = events.filter((e) => e.time > since);
     }
 
-    return events.slice(0, options.limit ?? 15).map((raw) => normalizeTickerEvent(raw, actor));
+    const signals = events.slice(0, options.limit ?? 15).map((raw) => normalizeTickerEvent(raw, actor));
+    if (sample) {
+      for (const s of signals) s.badges = [SAMPLE_BADGE, ...(s.badges ?? [])];
+    }
+    return signals;
   },
 
   normalizeSignal(raw: TickerEvent, actor: Actor): Signal {

@@ -14,16 +14,18 @@ import {
   View,
 } from 'react-native';
 import { ALL_DESCRIPTORS, getProvider } from '@/providers/registry';
-import type { ProviderMode } from '@/providers/types';
 import { tapFeedback } from '@/lib/feedback';
 import { relativeTime } from '@/lib/time';
 import { iconName } from '@/ui/icons';
 import { usePreferences } from '@/store/preferences';
 import { useFeed } from '@/store/feed';
 import { useWatchlist } from '@/store/watchlist';
+import { ProvenanceTag } from '@/ui/components/ProvenanceTag';
+import { Segmented } from '@/ui/components/Segmented';
 import { SourceBadge } from '@/ui/components/SourceBadge';
+import { RippleLogo } from '@/ui/components/RippleLogo';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import { radius, space, tint, type } from '@/ui/theme';
+import { font, radius, space, type } from '@/ui/theme';
 
 /**
  * Settings — where the app accounts for itself.
@@ -82,9 +84,13 @@ export default function SettingsScreen() {
           onChange={(v) => setPreference('theme', v)}
           options={[
             { value: 'system', label: 'System' },
-            { value: 'dark', label: 'Dark' },
-            { value: 'light', label: 'Light' },
+            // Short labels so all four fit one row on a phone; the full names
+            // are what a screen reader hears.
+            { value: 'dark', label: 'Blue', spoken: 'Dark blue' },
+            { value: 'black', label: 'Black', spoken: 'True black' },
+            { value: 'light', label: 'White' },
           ]}
+          help="System follows your phone between Dark blue and White. The accent colours are the same in every mode."
         />
 
         <ChoiceRow
@@ -138,7 +144,7 @@ export default function SettingsScreen() {
                 </Text>
               </View>
               <View style={styles.sourceRight}>
-                <ModePill mode={mode} />
+                <ProvenanceTag mode={mode} />
                 <Text style={styles.sourceCount}>
                   {following} following
                 </Text>
@@ -176,6 +182,10 @@ export default function SettingsScreen() {
       </Section>
 
       <Section title="About">
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.md }}>
+          <RippleLogo size={48} decorative />
+          <Text style={{ ...type.heading, color: c.text }}>Ripple</Text>
+        </View>
         <Text style={styles.sectionNote}>
           Ripple watches public disclosure feeds — congressional trade filings, SEC Form 4s and
           presidential actions — and puts them in one reverse-chronological list.
@@ -185,6 +195,7 @@ export default function SettingsScreen() {
           than an exact figure, and can arrive weeks after the trade they describe.
         </Text>
 
+        <PageRow icon="sparkles-outline" label="Show introduction" href="/onboarding" />
         <PageRow icon="reader-outline" label="Terms of Service" href="/terms" />
 
         <LinkRow
@@ -216,11 +227,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 /**
- * A small set of mutually exclusive options, laid out as pills.
+ * A labelled segmented control, with optional help copy underneath.
  *
- * `radiogroup` / `radio` rather than a row of buttons: it is what tells a
- * screen reader that picking one un-picks the others, and it announces
- * "2 of 3" so the size of the choice is known without hearing every option.
+ * The control itself is `Segmented`, which owns the radio semantics.
  */
 function ChoiceRow<T extends string>({
   label,
@@ -233,7 +242,7 @@ function ChoiceRow<T extends string>({
   label: string;
   value: T;
   onChange: (value: T) => void;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; spoken?: string }[];
   help?: string;
   preview?: React.ReactNode;
 }) {
@@ -242,48 +251,11 @@ function ChoiceRow<T extends string>({
   return (
     <View style={styles.choiceBlock}>
       <View style={styles.choiceHeader}>
-        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.rowLabelStrong}>{label}</Text>
         {preview}
       </View>
 
-      <View style={styles.choiceGroup} accessibilityRole="radiogroup" accessibilityLabel={label}>
-        {options.map((option) => {
-          const selected = option.value === value;
-          return (
-            <Pressable
-              key={option.value}
-              onPress={() => {
-                tapFeedback();
-                onChange(option.value);
-              }}
-              style={({ pressed }) => [
-                styles.choice,
-                selected && styles.choiceSelected,
-                pressed && styles.rowPressed,
-              ]}
-              accessibilityRole="radio"
-              /*
-               * Both, deliberately.
-               *
-               * A radio's state is checkedness, not selectedness, so
-               * `accessibilityState.checked` is what native needs. But
-               * react-native-web rendered this element with `role="radio"` and
-               * no `aria-checked` at all from either `selected` or `checked` —
-               * a screen reader named every option and never said which one
-               * was chosen. `aria-checked` is a cross-platform prop since RN
-               * 0.71 and is what actually reaches the DOM.
-               */
-              accessibilityState={{ checked: selected }}
-              aria-checked={selected}
-              accessibilityLabel={option.label}
-            >
-              <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <Segmented label={label} value={value} onChange={onChange} options={options} fill />
 
       {/* Announced on change, because the copy is what explains the choice the
           user just made and nothing else on screen says it. */}
@@ -334,7 +306,7 @@ function SwitchRow({
   return (
     <View style={styles.switchBlock}>
       <View style={styles.switchRow}>
-        <Text style={[styles.rowLabel, disabled && styles.disabledText]}>{label}</Text>
+        <Text style={[styles.rowLabelStrong, disabled && styles.disabledText]}>{label}</Text>
         <Switch
           value={value}
           onValueChange={(next) => {
@@ -343,7 +315,12 @@ function SwitchRow({
           }}
           disabled={disabled}
           trackColor={{ false: c.surfaceAlt, true: c.accent }}
-          thumbColor={c.onAccent}
+          // White in both themes, like the platform switches. `onAccent` is
+          // near-black in dark, which drew a dark knob on a dark track.
+          thumbColor="#FFFFFF"
+          // react-native-web ignores `thumbColor` once on and paints its own
+          // Material teal unless told otherwise. Not in RN's types.
+          {...({ activeThumbColor: '#FFFFFF' } as object)}
           ios_backgroundColor={c.surfaceAlt}
           accessibilityRole="switch"
           accessibilityLabel={label}
@@ -375,7 +352,7 @@ function Row({ label, value }: { label: string; value: string }) {
  * and a screen reader gets the difference through the role rather than by
  * inference.
  */
-function PageRow({ icon, label, href }: { icon: string; label: string; href: '/terms' }) {
+function PageRow({ icon, label, href }: { icon: string; label: string; href: '/terms' | '/onboarding' }) {
   const c = useTheme();
   const styles = useStyles();
   const router = useRouter();
@@ -418,24 +395,6 @@ function LinkRow({ icon, label, url }: { icon: string; label: string; url: strin
   );
 }
 
-/** The same honesty as the source picker, in the place people go to check. */
-function ModePill({ mode }: { mode: ProviderMode }) {
-  const c = useTheme();
-  const styles = useStyles();
-  const config: Record<ProviderMode, { label: string; tone: string }> = {
-    live: { label: 'LIVE · KEYED', tone: c.accent },
-    public: { label: 'LIVE · NO KEY', tone: c.up },
-    mock: { label: 'OFFLINE SAMPLE', tone: c.warning },
-  };
-  const { label, tone } = config[mode];
-
-  return (
-    <View style={[styles.modePill, { backgroundColor: tint(tone, 0.16) }]}>
-      <Text style={[styles.modePillText, { color: tone }]}>{label}</Text>
-    </View>
-  );
-}
-
 const useStyles = makeStyles((c) => ({
   screen: {
     flex: 1,
@@ -450,9 +409,8 @@ const useStyles = makeStyles((c) => ({
     gap: space.sm,
   },
   sectionTitle: {
-    ...type.micro,
+    ...type.label,
     color: c.textMuted,
-    textTransform: 'uppercase',
     paddingLeft: space.xs,
   },
   card: {
@@ -487,7 +445,7 @@ const useStyles = makeStyles((c) => ({
   },
   sourceMeta: {
     ...type.caption,
-    color: c.textSubtle,
+    color: c.textMuted,
   },
   sourceRight: {
     alignItems: 'flex-end',
@@ -496,14 +454,6 @@ const useStyles = makeStyles((c) => ({
   sourceCount: {
     ...type.caption,
     color: c.textMuted,
-  },
-  modePill: {
-    paddingHorizontal: space.sm,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  modePillText: {
-    ...type.tag,
   },
   row: {
     flexDirection: 'row',
@@ -520,6 +470,7 @@ const useStyles = makeStyles((c) => ({
   },
   choiceBlock: {
     gap: space.sm,
+    paddingHorizontal: space.lg,
     paddingVertical: space.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: c.border,
@@ -530,43 +481,18 @@ const useStyles = makeStyles((c) => ({
     justifyContent: 'space-between',
     gap: space.sm,
   },
-  choiceGroup: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space.sm,
-  },
-  choice: {
-    paddingHorizontal: space.md,
-    // 10 + the label's line box clears the 44pt minimum target without making
-    // a row of three pills taller than the rows around it.
-    paddingVertical: 10,
-    borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.border,
-    backgroundColor: c.surfaceAlt,
-  },
-  choiceSelected: {
-    backgroundColor: tint(c.accent, 0.16),
-    borderColor: c.accent,
-  },
-  choiceText: {
-    ...type.caption,
-    color: c.textMuted,
-  },
-  choiceTextSelected: {
-    color: c.accent,
-  },
   swatches: {
     flexDirection: 'row',
     gap: space.xs,
   },
   swatch: {
-    width: 22,
-    height: 14,
-    borderRadius: radius.sm,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   switchBlock: {
-    paddingVertical: space.sm,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: c.border,
     gap: space.xs,
@@ -582,7 +508,7 @@ const useStyles = makeStyles((c) => ({
   },
   help: {
     ...type.caption,
-    color: c.textSubtle,
+    color: c.textMuted,
     lineHeight: 17,
   },
   rowLabel: {
@@ -590,10 +516,15 @@ const useStyles = makeStyles((c) => ({
     color: c.textMuted,
     flexShrink: 1,
   },
+  rowLabelStrong: {
+    ...type.bodyTight,
+    color: c.text,
+    flexShrink: 1,
+  },
   rowValue: {
     ...type.bodyTight,
     color: c.text,
-    fontWeight: '600',
+    fontFamily: font.semibold,
   },
   linkRow: {
     justifyContent: 'flex-start',
@@ -615,9 +546,11 @@ const useStyles = makeStyles((c) => ({
   buttonPressed: {
     backgroundColor: c.surfaceAlt,
   },
+  // Ink: the red-orange icon marks it destructive; the shared `down` tone is
+  // below AA as small text on White.
   buttonText: {
     ...type.label,
-    color: c.down,
+    color: c.text,
   },
   cleared: {
     ...type.caption,
@@ -628,7 +561,7 @@ const useStyles = makeStyles((c) => ({
   },
   disclaimer: {
     ...type.caption,
-    color: c.textSubtle,
+    color: c.textMuted,
     paddingHorizontal: space.lg,
     paddingBottom: space.lg,
     lineHeight: 17,

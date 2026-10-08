@@ -132,18 +132,23 @@ export function filingUrl(row: Pick<FilingRow, 'year' | 'docId'>): string {
  * A filing row -> a feed signal.
  *
  * Note what this deliberately does *not* claim: no ticker, no amount, no
- * direction. The Clerk publishes those only inside the PDF, which is often a
- * scan. Asserting a ticker we haven't actually read would be inventing data.
- * Set a QuiverQuant or FMP key to get parsed, ticker-level trades instead.
+ * direction. The Clerk publishes those only inside the PDF, which is sometimes
+ * a scan. Asserting a ticker we haven't actually read would be inventing data.
+ * Used only for filings whose PDF has not been read: see `scraped.ts`.
  */
-export function normalizeFiling(row: FilingRow, actor: Actor): Signal {
+export function normalizeFiling(row: FilingRow, actor: Actor, unlisted = false): Signal {
   const timestamp = parseFilingDate(row.filingDate) ?? 0;
+  const who = `${actor.displayName}${actor.subtitle ? ` (${actor.subtitle})` : ''}`;
 
   return {
     id: `congress:${row.docId}`,
     source: 'congress',
     actor,
-    text: `${actor.displayName}${actor.subtitle ? ` (${actor.subtitle})` : ''} filed a periodic transaction report disclosing one or more trades. Amounts and tickers are in the filed PDF.`,
+    // `unlisted`: the PDF was read, and lists only bonds, Treasuries or private
+    // funds — nothing with a ticker to show. Saying so beats "see the PDF".
+    text: unlisted
+      ? `${who} filed a periodic transaction report listing only bonds, Treasuries or funds — no listed stocks. Details are in the filed PDF.`
+      : `${who} filed a periodic transaction report disclosing one or more trades. Amounts and tickers are in the filed PDF.`,
     url: filingUrl(row),
     timestamp,
     ticker: null,
@@ -175,6 +180,23 @@ export interface ParsedTrade {
   transactionDate: string;
   /** ISO date it was disclosed. */
   disclosureDate?: string | null;
+  /**
+   * Set for trades read from the Clerk's own PDFs (`scraped.ts`): the filing
+   * the card links to, a key unique within it, whose account it was, and the
+   * asset as filed. Aggregator trades leave these unset.
+   */
+  sourceUrl?: string | null;
+  key?: string | null;
+  owner?: string | null;
+  assetName?: string | null;
+  /** The Clerk DocID it was read from, whose "a filing exists" card it replaces. */
+  filingId?: string | null;
+  /**
+   * An option on the ticker, not the stock. Its value moves with strike,
+   * expiry and call-or-put, none of which are scraped — so the stock's price
+   * is never used to judge it.
+   */
+  option?: boolean;
 }
 
 /** True for anything that reads as a purchase. */
@@ -264,6 +286,8 @@ export function clusterBuyers(
 
   for (const trade of trades) {
     if (!isPurchase(trade.transaction)) continue;
+    // A bought put is a bet against the stock; options are not counted as buyers.
+    if (trade.option) continue;
     if (trade.ticker.trim().toUpperCase() !== symbol) continue;
 
     // Cluster on disclosure, not transaction date: the window has to describe
@@ -296,6 +320,9 @@ export function clusterBadge(
  * the buy that a visible sell closes usually belongs to an earlier page.
  */
 export function tradeSignalId(trade: ParsedTrade): string {
+  // A filing can list the same name, side and date twice (two lots sold the
+  // same day); the scraped key tells them apart where the slug cannot.
+  if (trade.key) return `congress:${trade.key}`;
   return `congress:${slug(trade.representative, trade.ticker, trade.transactionDate, trade.transaction)}`;
 }
 
@@ -306,6 +333,13 @@ export function tradeActionableAt(trade: ParsedTrade): number {
   const traded = Date.parse(trade.transactionDate);
   return Number.isFinite(traded) ? traded : Number.NaN;
 }
+
+/** The owner codes on a periodic transaction report, as words. */
+const OWNER_LABEL: Record<string, string> = {
+  SP: 'a spouse’s',
+  JT: 'a joint',
+  DC: 'a dependent child’s',
+};
 
 /** A parsed trade -> a feed signal, with ticker, direction and value. */
 export function normalizeTrade(trade: ParsedTrade, actor: Actor): Signal {
@@ -335,15 +369,21 @@ export function normalizeTrade(trade: ParsedTrade, actor: Actor): Signal {
     actor,
     text:
       `${actor.displayName} ${buy ? 'bought' : 'sold'} ${trade.ticker}` +
+      (trade.assetName ? ` · ${trade.assetName}` : '') +
       (trade.range ? ` (${trade.range})` : '') +
-      ` on ${trade.transactionDate}.${lagText}`,
-    url: `https://www.capitoltrades.com/politicians?search=${encodeURIComponent(trade.representative)}`,
+      ` on ${trade.transactionDate}` +
+      (trade.owner ? ` in ${OWNER_LABEL[trade.owner] ?? 'a related'} account` : '') +
+      `.${lagText}`,
+    url:
+      trade.sourceUrl ??
+      `https://www.capitoltrades.com/politicians?search=${encodeURIComponent(trade.representative)}`,
     timestamp,
     ticker: trade.ticker.toUpperCase(),
     accent: amount
       ? { label: `${buy ? '+' : '-'}${money(amount)}`, tone: buy ? 'up' : 'down' }
       : { label: buy ? 'BUY' : 'SELL', tone: buy ? 'up' : 'down' },
     badges,
+    ...(trade.filingId ? { supersedes: [`congress:${trade.filingId}`] } : {}),
     trade: {
       traderName: actor.displayName,
       traderTitle: actor.subtitle ?? null,
@@ -357,6 +397,7 @@ export function normalizeTrade(trade: ParsedTrade, actor: Actor): Signal {
       // The disclosed band, not its midpoint: the range is what was actually
       // filed, and the midpoint is our estimate of it.
       amountLabel: trade.range ?? (amount ? money(amount) : null),
+      tradedAt: Number.isFinite(traded) ? traded : null,
     },
   };
 }

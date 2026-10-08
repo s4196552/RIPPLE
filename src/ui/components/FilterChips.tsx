@@ -1,78 +1,84 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text } from 'react-native';
 import { ALL_DESCRIPTORS } from '@/providers/registry';
 import type { SourceId } from '@/providers/types';
-import { iconName } from '../icons';
-import { makeStyles, useTheme, useThemeName } from '../ThemeProvider';
-import { radius, space, tint, type } from '../theme';
-import { sourceFill } from '../sourceFill';
+import { glyph } from '../icons';
+import { makeStyles, useTheme } from '../ThemeProvider';
+import { font, space, type } from '../theme';
+import { Glyph } from './Glyph';
 
 interface Props {
   hidden: SourceId[];
-  onToggle: (source: SourceId) => void;
-  /** Signal counts per source, shown inside each chip. */
+  onChange: (hidden: SourceId[]) => void;
+  /** Signal counts per source, folded into each chip's spoken label. */
   counts: Record<string, number>;
 }
 
 /**
- * Source toggles above the feed. These filter what's already loaded rather than
- * refetching, so they respond instantly.
+ * "All", then one chip per source, above the feed.
+ *
+ * Single choice, as in the redesign: a source chip shows that source alone,
+ * and tapping it again — or tapping All — brings everything back. They filter
+ * what is already loaded rather than refetching, so they respond instantly.
+ *
+ * The selected chip is filled with ink rather than the accent, so the state
+ * survives greyscale and the accent stays reserved for actions.
  */
-export function FilterChips({ hidden, onToggle, counts }: Props) {
+export function FilterChips({ hidden, onChange, counts }: Props) {
   const c = useTheme();
   const styles = useStyles();
-  const themeName = useThemeName();
+  const all = hidden.length === 0;
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+
+  const chip = (
+    key: string,
+    label: string,
+    selected: boolean,
+    count: number,
+    onPress: () => void,
+    icon?: SourceId,
+  ) => (
+    <Pressable
+      key={key}
+      onPress={onPress}
+      style={({ pressed }) => [styles.chip, selected && styles.chipOn, pressed && styles.chipPressed]}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected }}
+      // The count is not drawn, so it is said here.
+      accessibilityLabel={`${label}, ${count} signal${count === 1 ? '' : 's'}`}
+    >
+      {icon ? (
+        <Glyph
+          glyph={glyph(ALL_DESCRIPTORS.find((d) => d.id === icon)!.icon)}
+          size={15}
+          color={selected ? c.bg : c.textMuted}
+        />
+      ) : null}
+      <Text style={[styles.chipText, selected && styles.chipTextOn]}>{label}</Text>
+    </Pressable>
+  );
+
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.row}
       style={styles.scroll}
+      accessibilityRole="radiogroup"
+      accessibilityLabel="Filter by source"
     >
+      {chip('all', 'All', all, total, () => onChange([]))}
       {ALL_DESCRIPTORS.map((s) => {
-        const off = hidden.includes(s.id);
-        const count = counts[s.id] ?? 0;
-        // Solid when on. The light theme uses its own darker fill per source —
-        // the bright descriptor colours have almost no presence on a near-white
-        // page. See `sourceFill` for the measurements.
-        const fill = sourceFill(s.id, s.color, themeName);
-
-        return (
-          <Pressable
-            key={s.id}
-            onPress={() => onToggle(s.id)}
-            hitSlop={{ top: space.sm, bottom: space.sm }}
-            style={[
-              styles.chip,
-              off ? styles.chipOff : { backgroundColor: fill, borderColor: fill },
-            ]}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: !off }}
-            // The count is only rendered as a small pill, so it has to be said
-            // out loud here or it's invisible to assistive tech.
-            accessibilityLabel={`${s.label} filter, ${count} signal${count === 1 ? '' : 's'}`}
-          >
-            {/* `onAccent` is the token for text on a filled surface: near-black
-                in dark, white in light — which is the right direction for both
-                fills. White on the bright originals would measure 1.87–3.23:1
-                and fail everywhere. */}
-            <Ionicons name={iconName(s.icon)} size={13} color={off ? c.textMuted : c.onAccent} />
-            <Text style={[styles.chipText, { color: off ? c.textMuted : c.onAccent }]}>
-              {s.label}
-            </Text>
-            <View
-              style={[
-                styles.count,
-                // A wash of the text colour over the fill, so the pill reads as
-                // part of the chip rather than a second object stuck on it.
-                { backgroundColor: off ? c.surfaceAlt : tint(c.onAccent, 0.2) },
-              ]}
-            >
-              <Text style={[styles.countText, { color: off ? c.textMuted : c.onAccent }]}>
-                {count}
-              </Text>
-            </View>
-          </Pressable>
+        const selected = !all && !hidden.includes(s.id);
+        const only = ALL_DESCRIPTORS.filter((d) => d.id !== s.id).map((d) => d.id);
+        return chip(
+          s.id,
+          s.label,
+          selected,
+          counts[s.id] ?? 0,
+          // Tapping the one source on show goes back to everything, so a chip
+          // is never a dead end.
+          () => onChange(selected && hidden.length === only.length ? [] : only),
+          s.id,
         );
       })}
     </ScrollView>
@@ -82,41 +88,39 @@ export function FilterChips({ hidden, onToggle, counts }: Props) {
 const useStyles = makeStyles((c) => ({
   scroll: {
     flexGrow: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
   },
   row: {
     flexDirection: 'row',
     gap: space.sm,
     paddingHorizontal: space.lg,
-    paddingVertical: space.sm,
+    paddingTop: space.sm,
+    paddingBottom: space.xs,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.xs,
-    paddingLeft: space.md,
-    paddingRight: space.sm,
-    paddingVertical: 7,
-    borderRadius: radius.pill,
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: 22,
     borderWidth: 1,
-  },
-  chipOff: {
-    backgroundColor: 'transparent',
     borderColor: c.border,
+    backgroundColor: c.surface,
+  },
+  chipOn: {
+    backgroundColor: c.text,
+    borderColor: c.text,
+  },
+  chipPressed: {
+    opacity: 0.75,
   },
   chipText: {
-    ...type.micro,
+    ...type.label,
+    fontSize: 14,
+    color: c.textMuted,
   },
-  count: {
-    minWidth: 20,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-  },
-  countText: {
-    fontSize: 10,
-    fontWeight: '700',
+  chipTextOn: {
+    fontFamily: font.bold,
+    color: c.bg,
   },
 }));

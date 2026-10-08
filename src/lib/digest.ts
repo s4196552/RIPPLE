@@ -101,12 +101,15 @@ export function dayLabel(dayStart: number, now: number = Date.now()): string {
 export function daySummary(day: DigestDay, labelFor: (source: SourceId) => string): string {
   const total = day.signals.length;
   const noun = total === 1 ? 'filing' : 'filings';
-  const breakdown = day.bySource.map((s) => `${s.count} ${labelFor(s.source).toLowerCase()}`);
+  // Source names are labels, not nouns: "1 stocks" and "1 insiders" read as
+  // typos, so the count follows the name instead of preceding it.
+  const breakdown = day.bySource.map((s) => `${labelFor(s.source)} ${s.count}`);
 
-  // With one source the breakdown just restates the total.
+  // With one source a count would just restate the total, so only name it.
   return day.bySource.length > 1
     ? `${total} ${noun} · ${breakdown.join(', ')}`
-    : `${total} ${noun} · ${breakdown[0] ?? ''}`.trim();
+    : `${total} ${noun} · ${day.bySource[0] ? labelFor(day.bySource[0].source) : ''}`
+        .replace(/ · $/, '');
 }
 
 const LATE_BADGE = 'LATE FILING';

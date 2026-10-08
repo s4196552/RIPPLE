@@ -1,0 +1,38 @@
+# Reads new House Periodic Transaction Reports every morning and commits the
+# updated trade data (src/providers/congress/data/house-trades.json).
+#
+# The app bundles that file; to pick up new filings without a rebuild, point
+# EXPO_PUBLIC_CONGRESS_TRADES_URL at its raw URL on the default branch.
+name: Scrape House trade reports
+
+on:
+  schedule:
+    # 11:30 UTC — after the Clerk's overnight update, before US market open.
+    - cron: '30 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run scrape:house
+      - name: Commit new trades, if any
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add src/providers/congress/data/house-trades.json
+          if git diff --cached --quiet; then
+            echo "No new filings."
+          else
+            git commit -m "Update House trade data"
+            git push
+          fi

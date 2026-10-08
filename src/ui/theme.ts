@@ -1,34 +1,59 @@
 /**
- * Design tokens.
+ * Design tokens — the "Tide Table" redesign.
  *
- * A terminal crossed with a news-alert app: dense, quiet chrome, and colour
- * reserved almost entirely for source identity. So the greys are near-neutral
- * with a slight blue cast, and the only saturated elements on a feed card are
- * the source badge and the value chip. The light palette answers the same
- * brief with the values inverted rather than a different design.
+ * Quiet, dense chrome: neutral surfaces, ink in three steps, and colour kept
+ * for meaning — the accent for things you can press, teal and orange for
+ * direction, amber for warnings. Sources are told apart by icon and name, not
+ * by colour.
+ *
+ * ── Three modes, one set of accents ─────────────────────────────────────────
+ * The app has three palettes — Dark blue, True black and White — and they
+ * share the SAME accents. Only the neutrals (backgrounds, cards, ink, rules)
+ * change with the mode, so a buy chip or the Follow button is the same colour
+ * wherever someone meets it.
+ *
+ * One colour cannot be dark enough for a white card and light enough for a
+ * navy one at the same time, so the shared accents sit at a middle lightness
+ * (relative luminance ≈0.22). What that buys and what it costs, measured:
+ *
+ *   accent / up / down / warning against every bg, surface and surfaceAlt in
+ *   all three modes ≥ 3:1     → clears WCAG 3:1 for icons, fills, borders and
+ *                                large text everywhere.
+ *   `onAccent` (#050C18) on any of them ≥ 4.9:1 → AA for small text.
+ *   Small text drawn IN an accent colour: 3.6–5.3:1 → NOT AA on White or on
+ *                                a Dark blue card.
+ *
+ * Hence the house rule: small text never sits in an accent colour. A toned
+ * value goes in a solid pill (`TonePill`: tone fill, `onAccent` text), a
+ * warning is ink text beside a warning-coloured icon, and a link is ink text
+ * with an accent icon. The accent paints shapes; ink paints words.
+ *
+ * Asserted in `test/theme.test.ts`.
+ * ────────────────────────────────────────────────────────────────────────────
  *
  * ── Why there is no `colors` export ─────────────────────────────────────────
  * There used to be one, and every screen imported it at module scope inside
  * `StyleSheet.create`. That captures the value once, at import, which means a
- * runtime theme switch cannot reach it — the app would have rendered half
- * light and half dark. Palettes are therefore reached through `useTheme()` and
- * `makeStyles()` in `./ThemeProvider`, never imported directly, and removing
- * the old export is what guarantees no screen was left behind.
+ * runtime theme switch cannot reach it. Palettes are therefore reached through
+ * `useTheme()` and `makeStyles()` in `./ThemeProvider`, never imported
+ * directly.
  * ────────────────────────────────────────────────────────────────────────────
  */
 
 /**
- * Every colour role in the app. Both palettes must define all of them, so a
- * token added for one theme cannot be forgotten in the other.
+ * Every colour role in the app. Every palette must define all of them, so a
+ * token added for one mode cannot be forgotten in the others.
  */
 export interface Palette {
   /** App background. */
   bg: string;
-  /** Cards and raised surfaces. */
+  /** Cards, the tab bar and other raised surfaces. */
   surface: string;
-  /** Pressed / secondary surfaces. */
+  /** Pressed / secondary surfaces, avatar plates, segmented tracks. */
   surfaceAlt: string;
-  /** Hairlines. Deliberately low contrast; density comes from spacing. */
+  /** The selected segment sitting on a `surfaceAlt` track. */
+  raised: string;
+  /** Hairlines and card borders. Deliberately low contrast. */
   border: string;
   borderStrong: string;
 
@@ -39,181 +64,191 @@ export interface Palette {
   /** Decorative chrome only — separators, inactive glyphs. Fails AA for text. */
   textFaint: string;
 
+  /** Shared across all three modes — see the header. Shapes, not words. */
   accent: string;
   up: string;
   down: string;
   warning: string;
 
-  /** Text and icons sitting on an `accent`-filled surface. */
+  /** Text and icons sitting on an accent-, up-, down- or warning-filled surface. */
   onAccent: string;
   /**
-   * The plate a logo is drawn on.
-   *
-   * The one token that does NOT invert with the theme. Logos arrive as
-   * transparent artwork drawn for light backgrounds, so a dark plate turns a
-   * black wordmark into a black smudge. It stays near-white in both palettes.
+   * The plate a logo is drawn on. The one neutral that does NOT follow the
+   * mode: logos arrive as transparent artwork drawn for light backgrounds.
    */
   logoPlate: string;
   overlay: string;
 }
 
 /**
- * Contrast against `bg` (#0B0E13), WCAG AA needs 4.5:1 for normal text:
- *   text 16.5:1 · warning 10.0:1 · up 10.3:1 · textMuted 6.6:1
- *   accent 6.0:1 · down 5.7:1 · textSubtle 4.8:1
- *   textFaint 3.3:1 — BELOW AA for normal text. Use it only for decorative
- *   chrome (separators); anything informational belongs on `textSubtle` or
- *   brighter.
+ * The accents every mode shares.
  *
- * These numbers are asserted in `test/theme.test.ts`, so editing a token
- * without updating this table fails the suite rather than quietly leaving
- * every accessibility note in the codebase wrong. (`text` was documented here
- * as 16.1:1 for exactly that reason — it had never been 16.1:1.)
+ * `up` and `down` here are the design's teal and orange — the pair that stays
+ * apart under red-green colour blindness. `CLASSIC_TONES` swaps in green/red.
+ */
+export const SHARED_ACCENTS = {
+  accent: '#3E78FF',
+  up: '#009179',
+  down: '#DF5200',
+  warning: '#AA7700',
+  onAccent: '#050C18',
+} as const;
+
+/**
+ * Dark blue. Contrast against `bg` (#0A1222):
+ *   text 16.1:1 · textMuted 10.4:1 · textSubtle 7.2:1
+ *   textFaint 3.5:1 — BELOW AA, decorative only.
  */
 export const darkPalette: Palette = {
-  bg: '#0B0E13',
-  surface: '#141922',
-  surfaceAlt: '#1C2230',
-  border: '#252C3B',
-  borderStrong: '#333C4E',
+  bg: '#0A1222',
+  surface: '#111C33',
+  surfaceAlt: '#1B2844',
+  raised: '#2A3A62',
+  border: '#2A3858',
+  borderStrong: '#4A5B80',
 
-  text: '#E9EDF5',
-  textMuted: '#8D97AB',
-  /**
-   * Exists because the hierarchy wanted a step below `textMuted` and the only
-   * one available was `textFaint`, which fails AA — so timestamps, handles and
-   * counts kept getting painted in a colour they were never allowed to use.
-   */
-  textSubtle: '#757E92',
-  textFaint: '#5C6579',
+  text: '#E8EEF9',
+  textMuted: '#B6C2D9',
+  textSubtle: '#93A1BC',
+  textFaint: '#5A6A8C',
 
-  accent: '#5B8DEF',
-  up: '#3FD68C',
-  down: '#F2545B',
-  warning: '#E8B23A',
-
-  /**
-   * Identical to `bg`, but named for the job: these were hardcoded as
-   * `'#0B0E13'` in five files, so a theme change would have missed every one.
-   */
-  onAccent: '#0B0E13',
+  ...SHARED_ACCENTS,
   logoPlate: '#F5F7FA',
   overlay: 'rgba(0,0,0,0.6)',
 };
 
 /**
- * The light palette, solved against its own background rather than inverted by
- * eye. Contrast against `bg` (#F6F8FC):
- *   text 16.4:1 · textMuted 6.6:1 · accent 5.8:1 · down 5.4:1
- *   up 5.4:1 · textSubtle 4.9:1 · warning 4.8:1
- *   textFaint 3.4:1 — BELOW AA, deliberately, so the token keeps the same
- *   decorative-only meaning it has in the dark palette. A role that is safe in
- *   one theme and unsafe in the other would make every accessibility note in
- *   the codebase conditional.
- *
- * `up`, `down` and `warning` are darker and less saturated than their dark-mode
- * counterparts: a colour bright enough to read on near-black is nowhere near
- * readable on near-white, and these three carry meaning rather than decoration.
- *
- * Asserted in `test/theme.test.ts` on the same terms as the dark table.
+ * True black, for OLED screens. Contrast against `bg` (#000000):
+ *   text 18.9:1 · textMuted 11.1:1 · textSubtle 6.8:1
+ *   textFaint 3.6:1 — BELOW AA, decorative only.
  */
-export const lightPalette: Palette = {
-  bg: '#F6F8FC',
-  surface: '#FFFFFF',
-  surfaceAlt: '#E9ECF3',
-  border: '#DCE1EB',
-  borderStrong: '#C3CAD9',
+export const blackPalette: Palette = {
+  bg: '#000000',
+  surface: '#0E0E10',
+  surfaceAlt: '#18191D',
+  raised: '#2A2B31',
+  border: '#26282E',
+  borderStrong: '#3A3D45',
 
-  text: '#141A26',
-  textMuted: '#525967',
-  textSubtle: '#646D7E',
-  textFaint: '#7C879C',
+  text: '#F2F3F5',
+  textMuted: '#B9BCC4',
+  textSubtle: '#8F939C',
+  textFaint: '#62656D',
 
-  accent: '#2457D6',
-  up: '#067647',
-  down: '#C4262E',
-  warning: '#9A6206',
-
-  /** White on `accent` measures 6.2:1, so button labels stay AA. */
-  onAccent: '#FFFFFF',
+  ...SHARED_ACCENTS,
   logoPlate: '#F5F7FA',
-  overlay: 'rgba(16,20,28,0.45)',
+  overlay: 'rgba(0,0,0,0.6)',
 };
 
-/** The two concrete palettes, by the name the preference stores. */
+/**
+ * White. Contrast against `bg` (#F2F5F4):
+ *   text 15.6:1 · textMuted 7.7:1 · textSubtle 5.4:1
+ *   textFaint 3.2:1 — BELOW AA, deliberately, so the token keeps the same
+ *   decorative-only meaning in every mode.
+ */
+export const lightPalette: Palette = {
+  bg: '#F2F5F4',
+  surface: '#FFFFFF',
+  surfaceAlt: '#E7EDEB',
+  raised: '#FFFFFF',
+  border: '#D3DCD9',
+  borderStrong: '#A6B3C9',
+
+  text: '#0F1E1D',
+  textMuted: '#41504D',
+  textSubtle: '#586764',
+  textFaint: '#7F8C89',
+
+  ...SHARED_ACCENTS,
+  logoPlate: '#F5F7FA',
+  overlay: 'rgba(12,19,19,0.45)',
+};
+
+/** The concrete palettes, by the name the preference stores. */
 export const PALETTES = {
   dark: darkPalette,
+  black: blackPalette,
   light: lightPalette,
 } as const;
 
 /** A resolved theme name — never 'system', which is a preference, not a theme. */
 export type ThemeName = keyof typeof PALETTES;
 
+/** True for the two dark modes. Most "is this dark?" questions want this. */
+export function isDark(theme: ThemeName): boolean {
+  return theme !== 'light';
+}
+
 /**
  * Which pair of colours carries direction.
  *
- * DEF: 'classic' is the green/red every finance product uses. 'accessible'
- * keeps the same semantics on a hue axis that survives colour-vision
- * deficiency.
+ * DEF: 'accessible' is the design's teal/orange and the default. 'classic' is
+ * the green/red every finance product uses, for anyone who wants the
+ * convention.
  */
 export type ToneMode = 'classic' | 'accessible';
 
 /**
- * ── Why an alternative tone pair exists ─────────────────────────────────────
- * Red and green sit on the axis that the two common deficiencies compress, and
- * roughly one man in twelve has one of them. Simulating the shipped palette
- * (Viénot–Brettel–Mollon) shows how thin the margin is: in the light palette
- * under protanopia, `up` #067647 and `down` #C4262E resolve to #756c44 and
- * #59502c — two olive-browns, ΔE 11.3 apart, separated by lightness alone.
+ * ── Why two tone pairs ──────────────────────────────────────────────────────
+ * Red and green sit on the axis that the two common colour-vision deficiencies
+ * compress, and roughly one man in twelve has one of them. Teal/orange rotates
+ * both colours off that axis while keeping their direction: teal is green
+ * shifted toward blue, orange is red shifted toward yellow.
  *
- * The replacement does NOT invert or reassign the convention, which would be
- * its own usability bug. It rotates both colours off the confusion axis while
- * keeping their direction: teal is green shifted toward blue, vermillion is red
- * shifted toward orange. Someone with normal colour vision still reads
- * green-ish for up and red-ish for down.
+ * Both pairs are shared across modes like the other accents and sit at the
+ * same middle lightness, so each clears 3:1 on every surface and carries
+ * `onAccent` text at AA.
  *
- * Measured separation of the pair below (ΔE*ab, higher is better):
- *   dark  — deuteranopia 58.3 · protanopia 41.1   (was 19.1 / 34.2)
- *   light — deuteranopia 62.7 · protanopia 46.9   (was 27.3 / 11.3)
+ * Teal rather than blue for `up` because blue would collide with `accent`.
  *
- * Teal rather than blue for `up` because blue would collide with `accent`:
- * a sky-blue `up` measured ΔE 18.8 against the accent under deuteranopia,
- * where teal measures 55.1.
+ * NOTE: `down` (orange) and `warning` (amber) land close together under
+ * deuteranopia. Tolerated: `warning` never appears as a bare tone chip — it
+ * always carries an icon or a word — and never sits next to a `down` chip.
  *
- * NOTE: in this mode `down` and `warning` land close together under
- * deuteranopia (light: ΔE 4.4). That is tolerated rather than designed around,
- * because `warning` never appears as a bare tone chip — every use of it in the
- * app carries an icon or a word ("OFFLINE SAMPLE") beside the colour — and it
- * never sits next to a `down` chip. Distorting `warning` to fix a collision
- * that cannot occur on screen would cost more than it buys.
- *
- * Asserted in `test/theme.test.ts`, which simulates all three dichromacies and
- * fails if a future palette edit narrows the gap.
+ * Asserted in `test/theme.test.ts`, which simulates all three dichromacies.
  * ────────────────────────────────────────────────────────────────────────────
  */
-const ACCESSIBLE_TONES: Record<ThemeName, Pick<Palette, 'up' | 'down'>> = {
-  // Contrast on #0B0E13: up 10.4:1 · down 6.9:1
-  dark: { up: '#2DD4BF', down: '#FF6B47' },
-  // Contrast on #F6F8FC: up 5.2:1 · down 4.9:1
-  light: { up: '#0F766E', down: '#C2410C' },
+const CLASSIC_TONES: Pick<Palette, 'up' | 'down'> = {
+  up: '#1F9A48',
+  down: '#E5484D',
 };
 
 /**
  * Built once, at module scope, rather than composed per render.
  *
  * `makeStyles` caches on palette identity, so a palette spread into a new
- * object on every render would miss the cache every time and rebuild every
- * stylesheet in the app. There are four possible palettes; these are them.
+ * object on every render would miss the cache every time. The base palettes
+ * already carry the accessible pair, so they are used as they are.
  */
-export const ACCESSIBLE_PALETTES: Record<ThemeName, Palette> = {
-  dark: { ...darkPalette, ...ACCESSIBLE_TONES.dark },
-  light: { ...lightPalette, ...ACCESSIBLE_TONES.light },
+export const ACCESSIBLE_PALETTES: Record<ThemeName, Palette> = PALETTES;
+
+export const CLASSIC_PALETTES: Record<ThemeName, Palette> = {
+  dark: { ...darkPalette, ...CLASSIC_TONES },
+  black: { ...blackPalette, ...CLASSIC_TONES },
+  light: { ...lightPalette, ...CLASSIC_TONES },
 };
 
 /** The palette for a resolved theme and tone preference. */
 export function paletteFor(theme: ThemeName, tone: ToneMode): Palette {
-  return tone === 'accessible' ? ACCESSIBLE_PALETTES[theme] : PALETTES[theme];
+  return tone === 'classic' ? CLASSIC_PALETTES[theme] : ACCESSIBLE_PALETTES[theme];
 }
+
+/**
+ * Font families, one per weight.
+ *
+ * Instrument Sans for everything, IBM Plex Mono for tickers, prices and
+ * counts. Each weight is its own family because a custom font with a
+ * `fontWeight` on top gets a synthesised bold on Android — so styles set
+ * `fontFamily` and never `fontWeight`. Loaded in `app/_layout.tsx`.
+ */
+export const font = {
+  regular: 'InstrumentSans_400Regular',
+  medium: 'InstrumentSans_500Medium',
+  semibold: 'InstrumentSans_600SemiBold',
+  bold: 'InstrumentSans_700Bold',
+  mono: 'IBMPlexMono_500Medium',
+  monoSemibold: 'IBMPlexMono_600SemiBold',
+} as const;
 
 export const space = {
   xs: 4,
@@ -232,22 +267,31 @@ export const radius = {
 } as const;
 
 export const type = {
-  title: { fontSize: 20, fontWeight: '700' as const, letterSpacing: -0.3 },
-  heading: { fontSize: 16, fontWeight: '700' as const, letterSpacing: -0.2 },
-  body: { fontSize: 15, lineHeight: 21 },
-  bodyTight: { fontSize: 14, lineHeight: 19 },
-  label: { fontSize: 13, fontWeight: '600' as const },
-  caption: { fontSize: 12 },
-  micro: { fontSize: 11, fontWeight: '600' as const, letterSpacing: 0.3 },
+  /** Screen titles in the tab headers: "Signals", "Watchlist". */
+  display: { fontSize: 28, lineHeight: 34, fontFamily: font.bold, letterSpacing: -0.3 },
+  title: { fontSize: 20, lineHeight: 26, fontFamily: font.bold, letterSpacing: -0.2 },
+  heading: { fontSize: 16, lineHeight: 21, fontFamily: font.semibold },
+  body: { fontSize: 15, lineHeight: 21, fontFamily: font.regular },
+  bodyTight: { fontSize: 14, lineHeight: 20, fontFamily: font.regular },
+  label: { fontSize: 13, lineHeight: 18, fontFamily: font.semibold },
+  caption: { fontSize: 12, lineHeight: 16, fontFamily: font.regular },
+  micro: { fontSize: 11, lineHeight: 14, fontFamily: font.semibold, letterSpacing: 0.3 },
   /**
-   * Dense uppercase tags — MUTED, TRADE DISCLOSURE, LIVE · KEYED.
+   * The uppercase kicker over a card or a day: "STOCKS · VOLUME SPIKE",
+   * "TODAY · WED 7 OCT". Pair with `textTransform: 'uppercase'`.
+   */
+  eyebrow: { fontSize: 11, lineHeight: 14, fontFamily: font.semibold, letterSpacing: 0.9 },
+  /**
+   * Dense uppercase tags — MUTED, TRADE DISCLOSURE, BUY.
    *
    * The floor of the scale at 10pt. Three components had each independently
    * inlined this at 9pt, which is below both platforms' smallest legible size
    * (iOS HIG 11pt, Material 10sp) and was never going to survive a user with
    * larger text turned on.
    */
-  tag: { fontSize: 10, fontWeight: '700' as const, letterSpacing: 0.4 },
+  tag: { fontSize: 10, lineHeight: 13, fontFamily: font.bold, letterSpacing: 0.5 },
+  /** Tickers, prices, counts. Tabular so columns of figures line up. */
+  mono: { fontSize: 13, lineHeight: 18, fontFamily: font.monoSemibold, fontVariant: ['tabular-nums'] as ['tabular-nums'] },
 } as const;
 
 /**

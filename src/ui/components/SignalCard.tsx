@@ -3,11 +3,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { describe } from '@/providers/registry';
 import type { Signal } from '@/providers/types';
 import { relativeTime, spokenTime } from '@/lib/time';
+import { glyph } from '../icons';
 import { makeStyles, useTheme } from '../ThemeProvider';
-import { radius, space, tint, type } from '../theme';
-import { markedLabel, spokenLabel, toneColor } from '../tone';
+import { font, radius, space, type } from '../theme';
+import { spokenLabel } from '../tone';
 import { Avatar } from './Avatar';
-import { SourceBadge } from './SourceBadge';
+import { Glyph } from './Glyph';
+import { TonePill } from './TonePill';
 
 interface Props {
   signal: Signal;
@@ -25,28 +27,28 @@ interface Props {
  */
 export const SignalCard = memo(
   function SignalCard({ signal, onPress, onPressActor }: Props) {
-  const c = useTheme();
-  const styles = useStyles();
+    const c = useTheme();
+    const styles = useStyles();
     const source = describe(signal.source);
     const [pressed, setPressed] = useState(false);
+    const hasFooter = Boolean(signal.accent || signal.badges?.length);
 
     // The avatar and the card body are siblings, never nested Pressables:
     // nesting renders a <button> inside a <button> on web, which is invalid
     // HTML and breaks keyboard focus. Press state is lifted so the highlight
-    // still covers the whole row.
+    // still covers the whole card.
     return (
       <View style={[styles.card, pressed && styles.cardPressed]}>
         <Pressable
           onPress={() => onPressActor?.(signal)}
           disabled={!onPressActor}
-          hitSlop={space.sm}
+          hitSlop={space.xs}
           accessibilityRole="button"
           accessibilityLabel={`View all signals from ${signal.actor.displayName}`}
         >
           <Avatar
             uri={signal.actor.avatarUrl}
             name={signal.actor.displayName}
-            accent={source.color}
             square={signal.source === 'stocks' || signal.source === 'insider'}
           />
         </Pressable>
@@ -58,55 +60,49 @@ export const SignalCard = memo(
           onPressOut={() => setPressed(false)}
           accessibilityRole="button"
           // One natural phrase, and it carries everything the card shows
-          // visually — badges and the accent chip included, since those are
+          // visually — badges and the value pill included, since those are
           // information rather than decoration.
           accessibilityLabel={
             `${source.label}, ${spokenTime(signal.timestamp)}. ` +
-            `${signal.text}` +
+            `${signal.actor.displayName}. ${signal.text}` +
             `${signal.accent ? ` ${spokenLabel(signal.accent.tone, signal.accent.label)}.` : ''}` +
             `${signal.badges?.length ? ` ${signal.badges.join('. ')}.` : ''}`
           }
           accessibilityHint="Opens the original filing"
         >
-          <View style={styles.header}>
-            <Text style={styles.name} numberOfLines={1}>
-              {signal.actor.displayName}
+          {/* The kicker: where this came from, by icon and name, and when.
+              Neutral on purpose — sources are told apart by name, so colour
+              stays free to mean direction. */}
+          <View style={styles.source}>
+            <Glyph glyph={glyph(source.icon)} size={13} color={c.textSubtle} />
+            <Text style={styles.sourceText} numberOfLines={1}>
+              {source.label}
             </Text>
-            {signal.actor.subtitle ? (
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {signal.actor.subtitle}
-              </Text>
-            ) : null}
-            <Text style={styles.dot} accessibilityElementsHidden importantForAccessibility="no">
-              ·
-            </Text>
-            <Text style={styles.time}>{relativeTime(signal.timestamp)}</Text>
             <View style={styles.spacer} />
-            <SourceBadge source={signal.source} />
+            <Text style={styles.time}>{relativeTime(signal.timestamp)}</Text>
           </View>
+
+          <Text style={styles.name} numberOfLines={2}>
+            {signal.actor.displayName}
+            {signal.actor.subtitle ? (
+              <Text style={styles.subtitle}>{`  ${signal.actor.subtitle}`}</Text>
+            ) : null}
+          </Text>
 
           <Text style={styles.text}>{signal.text}</Text>
 
-          <View style={styles.footer}>
-            {signal.accent && (
-              <View
-                style={[
-                  styles.chip,
-                  { backgroundColor: tint(toneColor(signal.accent.tone, c), 0.16) },
-                ]}
-              >
-                <Text style={[styles.chipText, { color: toneColor(signal.accent.tone, c) }]}>
-                  {markedLabel(signal.accent.tone, signal.accent.label)}
-                </Text>
+          {hasFooter && (
+            <View style={styles.footer}>
+              <View style={styles.badges}>
+                {signal.badges?.map((badge) => (
+                  <View key={badge} style={styles.badge}>
+                    <Text style={styles.badgeText}>{badge}</Text>
+                  </View>
+                ))}
               </View>
-            )}
-
-            {signal.badges?.map((badge) => (
-              <View key={badge} style={styles.badge}>
-                <Text style={styles.badgeText}>{badge}</Text>
-              </View>
-            ))}
-          </View>
+              {signal.accent && <TonePill tone={signal.accent.tone} label={signal.accent.label} />}
+            </View>
+          )}
         </Pressable>
       </View>
     );
@@ -142,75 +138,87 @@ function sameBadges(a: string[] | undefined, b: string[] | undefined): boolean {
 }
 
 const useStyles = makeStyles((c) => ({
+  // A card on the page, as in the design: surface, hairline border, 14pt
+  // corners, 8pt between cards.
   card: {
     flexDirection: 'row',
     gap: space.md,
-    paddingHorizontal: space.lg,
+    marginHorizontal: space.lg,
+    marginBottom: space.sm,
+    paddingHorizontal: 14,
     paddingVertical: space.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
-    backgroundColor: c.bg,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    backgroundColor: c.surface,
   },
   cardPressed: {
-    backgroundColor: c.surface,
+    backgroundColor: c.surfaceAlt,
   },
   body: {
     flex: 1,
-    gap: space.xs,
+    gap: 3,
   },
-  header: {
+  source: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.xs,
+    gap: 6,
+    marginBottom: 2,
   },
-  name: {
-    ...type.label,
-    color: c.text,
+  // `textSubtle`, not `textFaint`: these carry information and must clear AA.
+  sourceText: {
+    ...type.eyebrow,
+    textTransform: 'uppercase',
+    color: c.textSubtle,
     flexShrink: 1,
-  },
-  // Handles, districts and timestamps carry information, so they use
-  // `textMuted` (6.6:1) rather than `textFaint`, which fails AA at this size.
-  subtitle: {
-    ...type.caption,
-    color: c.textMuted,
-    flexShrink: 1,
-  },
-  dot: {
-    ...type.caption,
-    color: c.textFaint, // purely a separator glyph
-  },
-  time: {
-    ...type.caption,
-    color: c.textMuted,
   },
   spacer: {
     flex: 1,
     minWidth: space.sm,
   },
-  text: {
-    ...type.body,
+  time: {
+    ...type.caption,
+    fontFamily: font.medium,
+    color: c.textSubtle,
+  },
+  name: {
+    ...type.heading,
     color: c.text,
   },
+  subtitle: {
+    ...type.label,
+    fontFamily: font.medium,
+    color: c.textSubtle,
+  },
+  text: {
+    ...type.bodyTight,
+    color: c.textMuted,
+  },
+  // The measurement row: a rule, the tags on the left and the value on the
+  // right where the eye lands for figures. Solid rather than the design's
+  // dashed line: iOS does not draw a dashed border on one side only.
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     gap: space.sm,
-    marginTop: space.xs,
+    marginTop: space.sm,
+    paddingTop: space.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.border,
   },
-  chip: {
-    paddingHorizontal: space.sm,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  chipText: {
-    ...type.micro,
+  badges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    flexShrink: 1,
   },
   badge: {
-    paddingHorizontal: space.sm,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    backgroundColor: c.surfaceAlt,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: c.border,
   },
   badgeText: {
     ...type.tag,

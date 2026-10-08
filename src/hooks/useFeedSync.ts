@@ -85,6 +85,9 @@ export function useFeedSync() {
 
     const timer = setInterval(() => {
       if (AppState.currentState !== 'active') return;
+      // A timed mute that has run out rejoins the fetch set; the change of
+      // signature reloads it, so this tick's poll can go ahead as it is.
+      useWatchlist.getState().expireMutes();
       void load(subjectsRef.current, 'poll');
     }, POLL_INTERVAL_MS);
 
@@ -95,6 +98,7 @@ export function useFeedSync() {
   useEffect(() => {
     const onChange = (next: AppStateStatus) => {
       if (next === 'active') {
+        useWatchlist.getState().expireMutes();
         const away = Date.now() - lastActiveRef.current;
         if (subjectsRef.current.length > 0) {
           void load(subjectsRef.current, away > STALE_AFTER_MS ? 'refresh' : 'poll');

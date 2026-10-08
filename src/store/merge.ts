@@ -37,6 +37,10 @@ export function mergeSignals(
 
   for (const s of existing) byId.set(s.id, s);
   for (const s of incoming) byId.set(s.id, s);
+  // After both passes, so a replaced card goes whichever side it came from.
+  for (const s of incoming) {
+    for (const id of s.supersedes ?? []) byId.delete(id);
+  }
 
   return [...byId.values()]
     .sort((a, b) => b.timestamp - a.timestamp || a.id.localeCompare(b.id))
@@ -82,4 +86,18 @@ export function countBySource(signals: readonly Signal[]): Record<string, number
   const tally: Record<string, number> = {};
   for (const s of signals) tally[s.source] = (tally[s.source] ?? 0) + 1;
   return tally;
+}
+
+/**
+ * The watchlist with every timed mute that has run out lifted, or null when
+ * none has — so the caller can skip a store write, which would re-run the
+ * feed's fetch-set effect for nothing.
+ */
+export function liftExpiredMutes(
+  subjects: readonly WatchedSubject[],
+  now: number,
+): WatchedSubject[] | null {
+  const expired = (s: WatchedSubject) => s.muted && s.mutedUntil != null && s.mutedUntil <= now;
+  if (!subjects.some(expired)) return null;
+  return subjects.map((s) => (expired(s) ? { ...s, muted: false, mutedUntil: null } : s));
 }

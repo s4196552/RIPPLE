@@ -63,6 +63,9 @@ import {
   type RawLegislator,
   type Roster,
 } from './roster';
+import bundledTrades from './data/house-trades.json';
+import { allScrapedTrades, scrapedTrades } from './scraped';
+import { SCRAPED_FORMAT_VERSION, type ScrapedFile } from './scraped-format';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -73,10 +76,11 @@ import {
  *
  * THE LIMITATION, stated plainly: the Clerk publishes *who filed and when* as
  * structured data, but the actual tickers, amounts and directions live only
- * inside the filed PDF — frequently a scan of a paper form. Parsing those on
- * device is not realistic, so the keyless path emits one signal per filing
- * ("Rep. X disclosed trades, here is the PDF") and does not invent a ticker it
- * has not read.
+ * inside the filed PDF. Parsing those on device is not realistic, so they are
+ * read ahead of time by `scripts/scrape-house-ptrs.ts` and shipped as data (see
+ * TRADES_URL below). A filing that was never read — a scan of a paper form, or
+ * one newer than the last scrape — still emits one signal per filing ("Rep. X
+ * disclosed trades, here is the PDF") rather than inventing a ticker.
  *
  * ── To get ticker-level trades ──────────────────────────────────────────────
  * Set either key in `.env` and this provider upgrades automatically; nothing
@@ -113,6 +117,75 @@ import {
  */
 const QUIVER_TOKEN = process.env.EXPO_PUBLIC_QUIVER_API_TOKEN?.trim() || '';
 const FMP_KEY = process.env.EXPO_PUBLIC_FMP_API_KEY?.trim() || '';
+
+/**
+ * ── Trades read from the PDFs ourselves ─────────────────────────────────────
+ * `scripts/scrape-house-ptrs.ts` (`npm run scrape:house`) reads the Clerk's
+ * electronically filed PDFs — about nine in ten — and writes the trades to
+ * `data/house-trades.json`, which ships inside the app. Wherever a filing has
+ * been read, its card becomes real trades: ticker, side, band, and a link back
+ * to that PDF. Scanned paper filings, and anything filed since the last scrape,
+ * keep the "a filing exists" card.
+ *
+ * Set `EXPO_PUBLIC_CONGRESS_TRADES_URL` to a hosted copy of that file (a nightly
+ * job's output) and the app prefers it, so new filings appear without a rebuild.
+ */
+const TRADES_URL = process.env.EXPO_PUBLIC_CONGRESS_TRADES_URL?.trim() || '';
+const BUNDLED_TRADES = bundledTrades as unknown as ScrapedFile;
+
+let scrapedCache: { file: ScrapedFile; fetchedAt: number; ttl: number } | null = null;
+/** One download shared by every congress subject in a refresh. */
+let scrapedInFlight: Promise<ScrapedFile> | null = null;
+/** How long a failed hosted fetch falls back to the bundle before trying again. */
+const SCRAPED_RETRY_MS = 15 * 60 * 1000;
+
+async function loadScraped(signal?: AbortSignal): Promise<ScrapedFile> {
+  if (!TRADES_URL) return BUNDLED_TRADES;
+  const cached = scrapedCache;
+  if (cached && Date.now() - cached.fetchedAt < cached.ttl) return cached.file;
+
+  // Not tied to any one caller's abort signal: it is shared, and one subject
+  // being superseded must not cancel the download for the others.
+  scrapedInFlight ??= (async () => {
+    try {
+      const file = await getJson<ScrapedFile>(TRADES_URL, { timeoutMs: 20_000 });
+      if (file.v !== SCRAPED_FORMAT_VERSION) throw new Error(`unknown format v${file.v}`);
+      scrapedCache = { file, fetchedAt: Date.now(), ttl: INDEX_TTL_MS };
+      return file;
+    } catch (err) {
+      console.warn('[congress] hosted trades unavailable, using the copy bundled with the app:', err);
+      // Remembered, so every subject of every refresh doesn't wait out the
+      // same timeout again.
+      scrapedCache = { file: BUNDLED_TRADES, fetchedAt: Date.now(), ttl: SCRAPED_RETRY_MS };
+      return BUNDLED_TRADES;
+    } finally {
+      scrapedInFlight = null;
+    }
+  })();
+
+  const file = await scrapedInFlight;
+  if (signal?.aborted) throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
+  return file;
+}
+
+/** Filings read and found to hold only bonds, Treasuries or funds. */
+let unlistedCache: { file: ScrapedFile; set: Set<string> } | null = null;
+
+function unlistedSet(file: ScrapedFile): Set<string> {
+  if (unlistedCache?.file !== file) unlistedCache = { file, set: new Set(file.unlisted) };
+  return unlistedCache.set;
+}
+
+/** Every scraped trade, for cluster counts and round trips — rebuilt only when the data changes. */
+let allScrapedCache: { file: ScrapedFile; rows: readonly FilingRow[]; trades: ParsedTrade[] } | null = null;
+
+function allScraped(file: ScrapedFile, rows: readonly FilingRow[]): ParsedTrade[] {
+  const cached = allScrapedCache;
+  if (cached && cached.file === file && cached.rows === rows) return cached.trades;
+  const trades = allScrapedTrades(file, rows);
+  allScrapedCache = { file, rows, trades };
+  return trades;
+}
 
 /**
  * Set when the keyed aggregator refuses us — a free FMP key does not include
@@ -162,14 +235,32 @@ async function loadIndex(year: number, signal?: AbortSignal): Promise<FilingRow[
   return rows;
 }
 
+/**
+ * The last concatenation, by the year arrays it was built from. Returning the
+ * same array while the indexes are unchanged lets the caches keyed on it
+ * (`allScraped`) actually hit.
+ */
+let allRowsCache: { parts: readonly FilingRow[][]; rows: FilingRow[] } | null = null;
+
 /** All rows across the covered years. Failures on one year don't sink the rest. */
 async function loadAllRows(signal?: AbortSignal): Promise<FilingRow[]> {
   const results = await Promise.allSettled(coverageYears().map((y) => loadIndex(y, signal)));
-  const rows: FilingRow[] = [];
+  const parts: FilingRow[][] = [];
   for (const r of results) {
-    if (r.status === 'fulfilled') rows.push(...r.value);
+    if (r.status === 'fulfilled') parts.push(r.value);
     else if (isAbort(r.reason)) throw r.reason;
   }
+
+  const cached = allRowsCache;
+  if (
+    cached &&
+    cached.parts.length === parts.length &&
+    cached.parts.every((p, i) => p === parts[i])
+  ) {
+    return cached.rows;
+  }
+  const rows = parts.flat();
+  allRowsCache = { parts, rows };
   return rows;
 }
 
@@ -241,6 +332,25 @@ function actorForTrade(handle: string, trade: ParsedTrade, legislator: Legislato
         .filter(Boolean)
         .join(' · ') || null,
     avatarUrl: legislator ? photoUrl(legislator.bioguide) : null,
+  };
+}
+
+/** One member as a search or group-member row. */
+function memberResult(
+  m: { handle: string; displayName: string; district: string | null; filingCount: number; legislator: Legislator | null },
+): SubjectResult {
+  return {
+    source: 'congress',
+    handle: m.handle,
+    displayName: m.legislator?.name ?? m.displayName,
+    subtitle: [
+      m.district,
+      m.legislator?.party,
+      `${m.filingCount} trade filing${m.filingCount === 1 ? '' : 's'}`,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    avatarUrl: m.legislator ? photoUrl(m.legislator.bioguide) : null,
   };
 }
 
@@ -378,7 +488,7 @@ export const CongressProvider: Provider<FilingRow> = {
   label: 'Congress',
   sigil: '',
   color: '#C084FC',
-  icon: 'business',
+  icon: 'fa6:landmark-dome',
   blurb: 'STOCK Act trade disclosures filed by members of Congress',
   subjectNoun: 'a member or party',
   provenance: 'House Clerk financial disclosures',
@@ -428,21 +538,36 @@ export const CongressProvider: Provider<FilingRow> = {
           (m.legislator?.party.toLowerCase().includes(term) ?? false),
       )
       .slice(0, 12)
-      .map((m) => ({
-        source: 'congress' as const,
-        handle: m.handle,
-        displayName: m.legislator?.name ?? m.displayName,
-        subtitle: [
-          m.district,
-          m.legislator?.party,
-          `${m.filingCount} trade filing${m.filingCount === 1 ? '' : 's'}`,
-        ]
-          .filter(Boolean)
-          .join(' · '),
-        avatarUrl: m.legislator ? photoUrl(m.legislator.bioguide) : null,
-      }));
+      .map(memberResult);
 
     return [...groups, ...members].slice(0, 12);
+  },
+
+  async groupMembers(handle: string, signal?: AbortSignal): Promise<SubjectResult[] | null> {
+    const scope = parseScope(handle);
+    if (scope.kind === 'member') return null;
+
+    const [rows, roster] = await Promise.all([loadAllRows(signal), loadRoster(signal)]);
+    const reports = rows.filter(
+      (r) =>
+        r.filingType === PERIODIC_TRANSACTION_REPORT && scopeIncludes(scope, findLegislator(roster, r)),
+    );
+
+    // Whoever filed most recently leads: "who in this party is trading right
+    // now" is the question, and a busy filer from last spring is not the answer.
+    const latest = new Map<string, number>();
+    for (const r of reports) {
+      const h = memberHandle(r);
+      latest.set(h, Math.max(latest.get(h) ?? 0, parseFilingDate(r.filingDate) ?? 0));
+    }
+    const byHandle = new Map(reports.map((r) => [memberHandle(r), r] as const));
+
+    return extractMembers(reports)
+      .sort((a, b) => (latest.get(b.handle) ?? 0) - (latest.get(a.handle) ?? 0))
+      .map((m) => {
+        const row = byHandle.get(m.handle);
+        return memberResult({ ...m, legislator: row ? findLegislator(roster, row) : null });
+      });
   },
 
   async getSignals(handle: string, options: GetSignalsOptions = {}): Promise<Signal[]> {
@@ -488,11 +613,43 @@ export const CongressProvider: Provider<FilingRow> = {
       }
     }
 
-    const signals = mine
-      .map((row) => normalizeFiling(row, actorFor(handle, row, findLegislator(roster, row))))
-      .filter((s) => s.timestamp > 0);
+    // Keyless: the trades we read from the PDFs ourselves, where we have them.
+    const scraped = await loadScraped(options.signal);
+    const unlisted = unlistedSet(scraped);
+    const picked: { trade: ParsedTrade }[] = [];
+    const tradeSignals: Signal[] = [];
+    const filingSignals: Signal[] = [];
 
-    return finish(signals, options);
+    for (const row of mine) {
+      const legislator = findLegislator(roster, row);
+      const actor = actorFor(handle, row, legislator);
+      const trades = scrapedTrades(row, scraped);
+      if (trades.length === 0) {
+        filingSignals.push(normalizeFiling(row, actor, unlisted.has(row.docId)));
+        continue;
+      }
+      for (const trade of trades) {
+        picked.push({ trade });
+        tradeSignals.push(normalizeTrade(trade, actor));
+      }
+    }
+
+    if (tradeSignals.length > 0) {
+      // Price only what this page will show: a party subject can have hundreds
+      // of trades, and each distinct ticker is a price request.
+      const page = finish(tradeSignals, options);
+      const onPage = new Set(page.map((s) => s.id));
+      const pagePicked = picked.filter((p) => onPage.has(tradeSignalId(p.trade)));
+      const pageSignals = pagePicked.map((p) => page.find((s) => s.id === tradeSignalId(p.trade))!);
+      const everyone = allScraped(scraped, rows);
+      annotateClusters(pageSignals, pagePicked, everyone);
+      await annotateTradeContext(pageSignals, pagePicked, everyone, options.signal);
+    }
+
+    return finish(
+      [...tradeSignals, ...filingSignals].filter((s) => s.timestamp > 0),
+      options,
+    );
   },
 
   normalizeSignal(raw: FilingRow, actor: Actor): Signal {
@@ -513,7 +670,7 @@ function annotateClusters(
 ): void {
   signals.forEach((signal, i) => {
     const trade = picked[i]?.trade;
-    if (!trade || !isPurchase(trade.transaction)) return;
+    if (!trade || trade.option || !isPurchase(trade.transaction)) return;
 
     const badge = clusterBadge(clusterBuyers(allTrades, trade.ticker, signal.timestamp));
     if (badge) signal.badges = [...(signal.badges ?? []), badge];
@@ -534,7 +691,16 @@ async function annotateTradeContext(
   allTrades: readonly ParsedTrade[],
   abortSignal?: AbortSignal,
 ): Promise<void> {
-  const symbols = [...new Set(signals.map((s) => s.ticker).filter((t): t is string => !!t))];
+  // Options are left unpriced: the stock's move says nothing reliable about
+  // an option whose strike, expiry and side were never read.
+  const symbols = [
+    ...new Set(
+      signals
+        .filter((_, i) => !picked[i]?.trade.option)
+        .map((s) => s.ticker)
+        .filter((t): t is string => !!t),
+    ),
+  ];
   if (symbols.length === 0) return;
 
   // Cap the fan-out: a party subject can name dozens of tickers, and each is a
@@ -556,7 +722,7 @@ async function annotateTradeContext(
   signals.forEach((signal, i) => {
     const trade = picked[i]?.trade;
     const symbol = signal.ticker;
-    if (!trade || !symbol) return;
+    if (!trade || trade.option || !symbol) return;
     const stock = series.get(symbol);
     if (!stock) return;
 

@@ -1,13 +1,11 @@
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { relativeTime } from '@/lib/time';
-import type { TimelineCluster } from '@/lib/timeline';
 import { useFeed, visibleSignals } from '@/store/feed';
 import { useWatchlist } from '@/store/watchlist';
 import { EmptyState } from '@/ui/components/EmptyState';
-import { SignalCard } from '@/ui/components/SignalCard';
 import { SignalTimeline } from '@/ui/components/SignalTimeline';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
 import { space, type } from '@/ui/theme';
@@ -35,23 +33,13 @@ export default function TimelineScreen() {
     [signals, hidden, subjects],
   );
 
-  const openSignal = useCallback(async (cluster: TimelineCluster) => {
-    const lead = cluster.signals[0];
-    if (!lead) return;
-    await WebBrowser.openBrowserAsync(lead.url, {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      toolbarColor: c.bg,
-      controlsColor: c.accent,
-    });
-  }, []);
-
-  const openCard = useCallback(async (signal: { url: string }) => {
+  const openSignal = useCallback(async (signal: { url: string }) => {
     await WebBrowser.openBrowserAsync(signal.url, {
       presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
       toolbarColor: c.bg,
       controlsColor: c.accent,
     });
-  }, []);
+  }, [c]);
 
   if (!hydrated) return <View style={styles.screen} />;
 
@@ -63,7 +51,7 @@ export default function TimelineScreen() {
     return (
       <View style={styles.screen}>
         <EmptyState
-          icon="git-commit-outline"
+          icon="mci:chart-timeline-variant"
           title="Nothing on the timeline"
           body={
             subjects.length === 0
@@ -78,29 +66,12 @@ export default function TimelineScreen() {
     );
   }
 
-  // The newest few, so the screen answers "and what were they?" without making
-  // the user jump back to the feed.
-  const recent = shown.slice(0, 5);
-
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <SignalTimeline signals={shown} onSelect={openSignal} title="All sources" />
-
-      <View style={styles.legend}>
-        <Text style={styles.legendText}>
-          Each mark is a filing; a numbered one is several within a few days. Triangles point the
-          way a disclosed trade went — up for buys, down for sells — and a circle means no single
-          direction.
-        </Text>
-        {lastUpdated ? (
-          <Text style={styles.legendMeta}>Updated {relativeTime(lastUpdated)} ago</Text>
-        ) : null}
-      </View>
-
-      <Text style={styles.sectionTitle}>Latest</Text>
-      {recent.map((signal) => (
-        <SignalCard key={signal.id} signal={signal} onPress={openCard} />
-      ))}
+      <SignalTimeline signals={shown} onOpen={openSignal} />
+      {lastUpdated ? (
+        <Text style={styles.updated}>Updated {relativeTime(lastUpdated)} ago</Text>
+      ) : null}
     </ScrollView>
   );
 }
@@ -113,27 +84,10 @@ const useStyles = makeStyles((c) => ({
   content: {
     paddingBottom: space.xxl,
   },
-  legend: {
-    paddingHorizontal: space.lg,
-    paddingBottom: space.lg,
-    gap: space.xs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
-  },
-  legendText: {
+  updated: {
     ...type.caption,
-    color: c.textMuted,
-    lineHeight: 17,
-  },
-  legendMeta: {
-    ...type.caption,
-    color: c.textMuted,
-  },
-  sectionTitle: {
-    ...type.label,
-    color: c.text,
-    paddingHorizontal: space.lg,
+    color: c.textSubtle,
+    textAlign: 'center',
     paddingTop: space.lg,
-    paddingBottom: space.sm,
   },
 }));

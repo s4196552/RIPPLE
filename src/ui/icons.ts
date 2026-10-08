@@ -1,4 +1,6 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import type { GlyphSpec } from './components/Glyph';
+import { parseGlyph } from './glyphSpec';
 
 /** Every glyph name Ionicons will actually render. */
 export type IconName = keyof typeof Ionicons.glyphMap;
@@ -18,4 +20,28 @@ export function iconName(name: string): IconName {
     console.warn(`[icons] "${name}" is not an Ionicons glyph — falling back to help-circle.`);
   }
   return 'help-circle-outline';
+}
+
+/**
+ * `iconName` for any of the app's icon sets: turns `'fa6:scale-balanced'`,
+ * `'mci:access-point'` or a bare Ionicons name into something `<Glyph>` draws.
+ *
+ * Ionicons and MaterialCommunity names are checked here, with the same
+ * fallback as `iconName`. FontAwesome6 ships its icon set typed as `any`, with
+ * no glyph map to check against at runtime, so its names are checked by
+ * `test/glyphSpec.test.ts` instead.
+ */
+export function glyph(spec: string): GlyphSpec {
+  const { family, name } = parseGlyph(spec);
+  if (family === 'fa6') return { family, name };
+  if (family === 'mci') {
+    if (name in MaterialCommunityIcons.glyphMap) {
+      return { family, name: name as keyof typeof MaterialCommunityIcons.glyphMap };
+    }
+    if (__DEV__) {
+      console.warn(`[icons] "${name}" is not a MaterialCommunityIcons glyph — falling back to help-circle.`);
+    }
+    return { family: 'ion', name: 'help-circle-outline' };
+  }
+  return { family: 'ion', name: iconName(name) };
 }

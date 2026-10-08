@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Ripple logo">
+  <title>Ripple</title>
+  <g fill="none" stroke-linecap="round" stroke-width="16">
+    <path d="M128 24 A104 104 0 1 1 24 128" stroke="#9CC0FF"/>
+    <path d="M128 60 A68 68 0 1 1 60 128" stroke="#5B8DEF"/>
+    <path d="M128 96 A32 32 0 1 1 96 128" stroke="#2457D6"/>
+  </g>
+  <circle cx="128" cy="128" r="9" fill="#2457D6"/>
+</svg>

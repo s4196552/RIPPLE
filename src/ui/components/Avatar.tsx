@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import { makeStyles, useTheme } from '../ThemeProvider';
-import { radius, tint } from '../theme';
+import { font } from '../theme';
+import { Glyph, type GlyphSpec } from './Glyph';
 
 interface Props {
   uri?: string | null;
-  /** Used for the monogram fallback and its colour. */
+  /** Used for the monogram fallback. */
   name: string;
   size?: number;
-  /** Platform colour, tinted behind the monogram. */
-  accent?: string;
   /** Tickers read better as a square badge than a circle. */
   square?: boolean;
   /**
@@ -23,6 +22,11 @@ interface Props {
    * to a square would lose its ends.
    */
   logo?: boolean;
+  /**
+   * A mark to draw instead of the monogram when there is no image — a party's
+   * animal, say, where initials like "RE" would mean nothing.
+   */
+  glyph?: GlyphSpec;
 }
 
 /**
@@ -35,13 +39,17 @@ export function Avatar({
   uri,
   name,
   size = 40,
-  accent: accentProp,
   square = false,
   logo = false,
+  glyph,
 }: Props) {
   const c = useTheme();
   const styles = useStyles();
-  const accent = accentProp ?? c.accent;
+  // Neutral in every mode: identity comes from the name and the source's
+  // icon, not a colour per source or party, so the accents keep meaning
+  // direction and action and nothing else. `textMuted` on `surfaceAlt`
+  // clears AA in all three modes.
+  const ink = c.textMuted;
   const [failed, setFailed] = useState(false);
   const initials = monogram(name);
 
@@ -56,12 +64,20 @@ export function Avatar({
   const shape = {
     width: size,
     height: size,
-    borderRadius: square ? radius.md : size / 2,
+    borderRadius: square ? Math.round(size / 4) : size / 2,
   };
+
+  if ((!uri || failed) && glyph) {
+    return (
+      <View style={[styles.fallback, shape, { backgroundColor: c.surfaceAlt }]}>
+        <Glyph glyph={glyph} size={size * 0.5} color={ink} />
+      </View>
+    );
+  }
 
   if (!uri || failed) {
     return (
-      <View style={[styles.fallback, shape, { backgroundColor: tint(accent, 0.18) }]}>
+      <View style={[styles.fallback, shape, { backgroundColor: c.surfaceAlt }]}>
         {/*
           The one place text deliberately does not scale with the system size.
           The monogram is sized as a fraction of a fixed-size avatar box that
@@ -70,7 +86,7 @@ export function Avatar({
           row's label doesn't already say.
         */}
         <Text
-          style={[styles.initials, { color: accent, fontSize: size * 0.36 }]}
+          style={[styles.initials, { color: ink, fontSize: size * 0.36 }]}
           numberOfLines={1}
           allowFontScaling={false}
         >
@@ -128,13 +144,12 @@ const useStyles = makeStyles((c) => ({
   /**
    * A near-white plate so every logo is legible, whatever colour it is.
    *
-   * Off-white rather than pure white: at 40pt on a near-black feed, `#FFFFFF`
-   * reads as a row of lamps, and the theme reserves that much contrast for
-   * text. This is the same tone as `c.text`, so the brightest thing in a
-   * row stays as bright as the brightest thing in a row already was.
+   * `logoPlate`, which is off-white in both themes. This used to be `c.text`,
+   * which matched in dark but turned every plate near-black in light — the
+   * opposite of what transparent logo artwork drawn for white needs.
    */
   plate: {
-    backgroundColor: c.text,
+    backgroundColor: c.logoPlate,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -143,7 +158,7 @@ const useStyles = makeStyles((c) => ({
     justifyContent: 'center',
   },
   initials: {
-    fontWeight: '700',
+    fontFamily: font.bold,
     letterSpacing: -0.2,
   },
 }));

@@ -36,6 +36,11 @@ export interface BackupSubject {
   displayName: string;
   subtitle?: string | null;
   muted?: boolean;
+  /**
+   * When a timed mute lifts, epoch ms. Additive, so the version is unchanged:
+   * a build that predates it reads the follow as muted until unmuted.
+   */
+  mutedUntil?: number;
 }
 
 export function createBackup(
@@ -52,6 +57,7 @@ export function createBackup(
       displayName: s.displayName,
       subtitle: s.subtitle ?? null,
       ...(s.muted ? { muted: true } : {}),
+      ...(s.muted && s.mutedUntil != null ? { mutedUntil: s.mutedUntil } : {}),
     })),
   };
 }
@@ -141,6 +147,9 @@ export function parseBackup(text: string): ParseResult {
             s.handle.trim(),
       subtitle: typeof s.subtitle === 'string' ? s.subtitle : null,
       ...(s.muted === true ? { muted: true } : {}),
+      ...(s.muted === true && typeof s.mutedUntil === 'number' && Number.isFinite(s.mutedUntil)
+        ? { mutedUntil: s.mutedUntil }
+        : {}),
     });
   }
 

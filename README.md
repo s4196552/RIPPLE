@@ -89,21 +89,33 @@ after a successful fetch. There is a regression test for exactly this.
 The picker tags each source with where its data comes from, so degraded data is
 never mistaken for the real thing.
 
-### Congress — `LIVE · NO KEY`, with one honest limitation
+### Congress — `LIVE · NO KEY`, House trades read from the filings themselves
 
 [CongressProvider](src/providers/congress/CongressProvider.ts) reads the House
-Clerk's annual disclosure index (`{year}FD.txt`, ~80KB, no key, no signup) and
-emits one signal per Periodic Transaction Report — the STOCK Act trade filing.
+Clerk's annual disclosure index (`{year}FD.txt`, ~80KB, no key, no signup): who
+filed a Periodic Transaction Report — the STOCK Act trade filing — and when.
 
-**The limitation, stated plainly:** the Clerk publishes *who filed and when* as
-structured data, but the tickers, amounts and direction exist only inside the
-filed PDF, frequently as a scan. So the keyless path links to the PDF and does
-**not** invent a ticker it hasn't read.
+The tickers, amounts and direction exist only inside each filing's PDF, so
+[`npm run scrape:house`](scripts/scrape-house-ptrs.ts) reads them ahead of time
+and writes [`house-trades.json`](src/providers/congress/data/), which ships with
+the app. About nine in ten House filings are electronic and parse cleanly (in
+the 2025–26 run: 809 of 922 filings read, 9,750 trades in listed securities); the rest are scanned
+paper forms with no text, and those — like anything filed since the last
+scrape — keep a card that links to the PDF rather than inventing a ticker.
 
-To get ticker-level trades, set `EXPO_PUBLIC_QUIVER_API_TOKEN` (~$25/mo, and
-covers the Senate) or `EXPO_PUBLIC_FMP_API_KEY` (free tier). The provider then
-serves parsed trades with amounts, direction, disclosure lag, and a
-**LATE FILING** badge when a trade breaches the 45-day STOCK Act deadline.
+Each read trade becomes a full trade card: ticker, side, the disclosed band,
+whose account (self, spouse, joint, dependent child), disclosure lag, a
+**LATE FILING** badge past the 45-day STOCK Act deadline, the price reaction
+against the S&P 500, and a link to the filing it came from.
+
+The scrape is incremental (only new filings are downloaded) and runs on a
+schedule via [`.github/workflows/scrape-house-trades.yml`](.github/workflows/scrape-house-trades.yml)
+once the repo is on GitHub; set `EXPO_PUBLIC_CONGRESS_TRADES_URL` to the file's
+raw URL and the app picks up new filings without a rebuild.
+
+`EXPO_PUBLIC_QUIVER_API_TOKEN` (~$25/mo) remains an option for the Senate.
+`EXPO_PUBLIC_FMP_API_KEY` only helps on a paid FMP plan — the free plan does
+not include the congressional endpoints.
 
 The Senate isn't covered keyless: its eFD system requires accepting an
 interstitial agreement and holding a session cookie, which isn't something to do
@@ -413,13 +425,19 @@ a successful fetch, and a stock classifier that called any new maximum a
 
 ## Known gaps
 
-- **Congressional tickers need a key.** Keyless gives filings, not line items.
+- **House trades are as fresh as the last scrape.** Filings newer than the
+  bundled `house-trades.json` show as link-to-PDF cards until the scrape is
+  re-run (or the scheduled workflow and `EXPO_PUBLIC_CONGRESS_TRADES_URL` are
+  set up). Scanned paper filings, about one in ten, are never read.
+- **The Senate needs a key.** Its disclosure site requires a session cookie.
 - **Web builds degrade.** Yahoo and the House Clerk send no CORS headers, so
   those two are blocked in a browser. iOS/Android have no CORS and are the real
   target; the Federal Register and SEC work everywhere.
 - **Yahoo rate-limits.** Verified: it returns 429 under repeated automated
-  access and even fingerprints the HTTP client. `syntheticSeries` keeps the UI
-  working; Finnhub is the way out.
+  access and even fingerprints the HTTP client. A failed lookup now shows no
+  price reaction rather than an invented one; Finnhub is the way out. For UI
+  work on web, `EXPO_PUBLIC_DEMO_PRICES=1` fills the Stocks source with a
+  sample series badged `SAMPLE DATA` — it never reaches trade reactions.
 - No push notifications; polling is foreground-only.
 - **The Terms of Service are an unreviewed draft.** They describe what the app
   actually does, but no lawyer has read them, the contact address and governing

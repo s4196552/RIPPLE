@@ -7,6 +7,13 @@
       "runtimeArgs": ["expo", "start", "--web", "--port", "8081"],
       "port": 8081,
       "autoPort": false
+    },
+    {
+      "name": "ripple-web-check",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8082"],
+      "port": 8082,
+      "autoPort": false
     }
   ]
 }

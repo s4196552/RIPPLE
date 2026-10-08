@@ -33,6 +33,14 @@ describe('relativeTime', () => {
     assert.match(relativeTime(Date.parse('2024-02-09T00:00:00Z'), NOW), /2024$/);
   });
 
+  it('dates by the UTC day, matching the feed day headers', () => {
+    // A US close (20:00 UTC) is the next morning east of UTC; the card must
+    // still print the day its header does.
+    assert.equal(relativeTime(Date.parse('2026-05-24T20:00:00Z'), NOW), 'May 24');
+    // A date-only filing at UTC midnight is the evening before west of UTC.
+    assert.equal(relativeTime(Date.parse('2026-05-17T00:00:00Z'), NOW), 'May 17');
+  });
+
   it('never renders 0s — a just-posted item reads as 1s', () => {
     assert.equal(relativeTime(NOW - 100, NOW), '1s');
   });

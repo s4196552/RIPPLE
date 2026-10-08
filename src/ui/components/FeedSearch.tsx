@@ -8,7 +8,7 @@ import {
   type SearchWindow,
 } from '@/lib/search';
 import { makeStyles, useTheme } from '../ThemeProvider';
-import { radius, space, tapSlop, toneChip, type } from '../theme';
+import { radius, space, tapSlop, type } from '../theme';
 
 interface Props {
   filter: FeedFilter;
@@ -255,11 +255,13 @@ const useStyles = makeStyles((c) => ({
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
     borderRadius: radius.sm,
-    backgroundColor: toneChip(c.accent),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.borderStrong,
+    backgroundColor: c.surface,
   },
   suggestionText: {
     ...type.micro,
-    color: c.accent,
+    color: c.text,
   },
   statusRow: {
     flexDirection: 'row',
@@ -278,7 +280,8 @@ const useStyles = makeStyles((c) => ({
   },
   clearText: {
     ...type.micro,
-    color: c.accent,
+    color: c.text,
+    textDecorationLine: 'underline',
   },
   pressed: {
     opacity: 0.7,

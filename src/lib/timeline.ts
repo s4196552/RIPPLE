@@ -4,10 +4,10 @@ import type { Signal, SourceId } from '@/providers/types';
  * Layout maths for the signal timeline.
  *
  * The feed answers "what happened, newest first". It is bad at the question
- * this view exists for: when did all of this happen *relative to each other* —
- * did three members buy the same week an executive order landed? Stacking each
- * source as its own lane on a shared time axis makes that legible in a way a
- * vertical list never can.
+ * this view exists for: when was it busy, and which way did it lean — did
+ * three members buy the same week an executive order landed? Counting every
+ * source into the same columns on a shared time axis makes that legible in a
+ * way a vertical list never can.
  *
  * Only `import type`, so this is unit-tested directly with no React, no native
  * modules and no network. Every geometry decision lives here rather than in the
@@ -69,161 +69,156 @@ export function windowFor(
   return { start: end - days * DAY, end, days };
 }
 
-/** Where a timestamp falls across the window, clamped to 0..1. */
-export function positionOf(timestamp: number, window: TimelineWindow): number {
-  const span = window.end - window.start;
-  if (span <= 0) return 0;
-  return Math.min(1, Math.max(0, (timestamp - window.start) / span));
-}
-
-/** Signals inside the window, newest first. */
-export function withinWindow(
-  signals: readonly Signal[],
-  window: TimelineWindow,
-): Signal[] {
-  return signals
-    .filter((s) => s.timestamp >= window.start && s.timestamp <= window.end)
-    .sort((a, b) => b.timestamp - a.timestamp);
-}
-
-export interface TimelineTick {
-  at: number;
-  label: string;
-  /** 0..1 across the window. */
-  position: number;
-}
-
 /**
- * Evenly spaced date labels along the axis.
- *
- * The format follows the span rather than being fixed: a year of history
- * labelled with day numbers is unreadable, and a month labelled only by month
- * name says nothing.
+ * ── Activity buckets ────────────────────────────────────────────────────────
+ * The timeline draws counts rather than individual marks: one
+ * column per day, week or month, buys stacked above an axis and sells hung
+ * below it. A column of five reads as "five" at a glance, where five
+ * overlapping dots read as one. The same columns drive the source lanes (a dot
+ * sized by count) and the "Busiest weeks" list, so the three always agree.
+ * ────────────────────────────────────────────────────────────────────────────
  */
-export function ticksFor(window: TimelineWindow, count = 4): TimelineTick[] {
-  if (count < 2) return [];
 
-  const ticks: TimelineTick[] = [];
-  for (let i = 0; i < count; i++) {
-    const position = i / (count - 1);
-    const at = window.start + (window.end - window.start) * position;
-    ticks.push({ at, label: tickLabel(at, window.days), position });
-  }
-  return ticks;
+export interface BucketSpan {
+  /** Inclusive. */
+  start: number;
+  /** Exclusive. */
+  end: number;
 }
 
-function tickLabel(at: number, spanDays: number): string {
-  const d = new Date(at);
-  const month = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
-
-  if (spanDays > 400) return `${month} ${String(d.getUTCFullYear()).slice(2)}`;
-  if (spanDays > 120) return month;
-  return `${d.getUTCDate()} ${month}`;
-}
-
-export interface TimelineCluster {
-  /** 0..1 across the window. */
-  position: number;
-  /** Newest first; the first is the representative for tap and label. */
+export interface ActivityBucket extends BucketSpan {
+  up: number;
+  down: number;
+  /** Signals with no direction — policy actions, mostly. Drawn on the axis. */
+  neutral: number;
+  total: number;
+  bySource: Partial<Record<SourceId, number>>;
+  /** Newest first. */
   signals: Signal[];
-  /** Shared direction, or neutral when the cluster disagrees with itself. */
-  tone: 'up' | 'down' | 'neutral';
-  /** Newest timestamp in the cluster. */
-  at: number;
+}
+
+export type BucketUnit = 'day' | 'week' | 'month' | 'quarter';
+
+const UNIT_DAYS: Record<BucketUnit, number> = { day: 1, week: 7, month: 30, quarter: 91 };
+
+/**
+ * How wide a column is for a range.
+ *
+ * Chosen so the chart lands between roughly 12 and 30 columns: fewer and the
+ * shape is lost, more and a column is narrower than a finger.
+ */
+export function bucketUnitFor(range: TimelineRange, window: TimelineWindow): BucketUnit {
+  if (range === '30d') return 'day';
+  if (range === '90d') return 'week';
+  if (range === '1y') return 'month';
+  if (window.days <= 120) return 'week';
+  if (window.days <= 450) return 'month';
+  return 'quarter';
 }
 
 /**
- * Collapse markers that would overlap into one.
+ * Equal spans laid back from the window's end, oldest first.
  *
- * Without this a busy week renders as a single smear of overlapping dots that
- * cannot be tapped apart, and the eye reads it as one event rather than nine.
- * `minGap` is a fraction of track width, so the caller decides using the width
- * it actually has.
+ * Anchored at the end rather than the start so the newest column is always a
+ * whole one — it is the column people look at, and a stub there would read as
+ * a quiet week when it is really a short one.
  */
-export function clusterSignals(
-  signals: readonly Signal[],
-  window: TimelineWindow,
-  minGap = 0.03,
-): TimelineCluster[] {
-  const points = signals
-    .map((signal) => ({ signal, position: positionOf(signal.timestamp, window) }))
-    .sort((a, b) => a.position - b.position || b.signal.timestamp - a.signal.timestamp);
-
-  // Greedy left-to-right: a point joins the open group while it sits within
-  // minGap of where that group started, otherwise it opens a new one.
-  const groups: { position: number; signals: Signal[] }[] = [];
-
-  for (const point of points) {
-    const open = groups[groups.length - 1];
-    if (open && point.position - open.position <= minGap) {
-      open.signals.push(point.signal);
-    } else {
-      groups.push({ position: point.position, signals: [point.signal] });
-    }
+export function fixedSpans(window: TimelineWindow, unit: BucketUnit): BucketSpan[] {
+  const width = UNIT_DAYS[unit] * DAY;
+  // Columns break at UTC midnight, the resolution filings are dated in, so a
+  // day column is one calendar day and its label is the day it holds. The
+  // last column runs to the end of the window's final day.
+  const anchor = Math.floor(window.end / DAY) * DAY + DAY;
+  const count = Math.max(1, Math.ceil((window.end - window.start) / width - 1e-9));
+  const spans: BucketSpan[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const end = anchor - i * width;
+    spans.push({ start: end - width, end });
   }
-
-  return groups.map((group) => {
-    const ordered = [...group.signals].sort((a, b) => b.timestamp - a.timestamp);
-    return {
-      position: group.position,
-      signals: ordered,
-      tone: toneOf(ordered),
-      at: ordered[0]?.timestamp ?? window.end,
-    };
-  });
+  return spans;
 }
 
-/** A cluster is directional only when everything in it agrees. */
-function toneOf(signals: readonly Signal[]): 'up' | 'down' | 'neutral' {
-  const tones = new Set(signals.map((s) => s.accent?.tone ?? 'neutral'));
-  if (tones.size === 1) {
-    const only = [...tones][0];
-    return only === 'up' || only === 'down' ? only : 'neutral';
+/** The last `months` calendar months (UTC) up to and including `now`'s, oldest first. */
+export function monthSpans(months: number, now: number = Date.now()): BucketSpan[] {
+  const d = new Date(now);
+  const spans: BucketSpan[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const start = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1);
+    const end = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i + 1, 1);
+    spans.push({ start, end });
   }
-  return 'neutral';
+  return spans;
 }
 
-export interface TimelineLane {
-  source: SourceId;
-  clusters: TimelineCluster[];
-  /** Signals in the window for this source. */
-  count: number;
+/** Sorts signals into spans and counts them by direction and source. */
+export function fillBuckets(signals: readonly Signal[], spans: readonly BucketSpan[]): ActivityBucket[] {
+  const buckets: ActivityBucket[] = spans.map((span) => ({
+    ...span,
+    up: 0,
+    down: 0,
+    neutral: 0,
+    total: 0,
+    bySource: {},
+    signals: [],
+  }));
+
+  for (const signal of signals) {
+    const bucket = buckets.find((b) => signal.timestamp >= b.start && signal.timestamp < b.end);
+    if (!bucket) continue;
+    const tone = signal.accent?.tone ?? 'neutral';
+    if (tone === 'up') bucket.up += 1;
+    else if (tone === 'down') bucket.down += 1;
+    else bucket.neutral += 1;
+    bucket.total += 1;
+    bucket.bySource[signal.source] = (bucket.bySource[signal.source] ?? 0) + 1;
+    bucket.signals.push(signal);
+  }
+
+  for (const bucket of buckets) bucket.signals.sort((a, b) => b.timestamp - a.timestamp);
+  return buckets;
+}
+
+/** Non-empty buckets, busiest first; a tie goes to the more recent. */
+export function busiestBuckets(buckets: readonly ActivityBucket[], limit = 3): ActivityBucket[] {
+  return buckets
+    .filter((b) => b.total > 0)
+    .sort((a, b) => b.total - a.total || b.start - a.start)
+    .slice(0, limit);
+}
+
+function dayMonth(at: number): { day: number; month: string; year: number } {
+  const d = new Date(at);
+  return {
+    day: d.getUTCDate(),
+    month: d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }),
+    year: d.getUTCFullYear(),
+  };
+}
+
+/** `9 Jul` — the short date the axis and headers use. */
+export function shortDate(at: number): string {
+  const { day, month } = dayMonth(at);
+  return `${day} ${month}`;
 }
 
 /**
- * One lane per source that actually has signals in the window.
+ * A span as people say it: `7 Oct`, `1–7 Oct`, `28 Sep – 4 Oct`.
  *
- * Empty lanes are dropped rather than drawn blank: a row of nothing reads as a
- * rendering failure, and the source chips above the feed already say which
- * sources exist.
+ * Spans end exclusively, so the last day shown is the one before `end`.
  */
-export function buildLanes(
-  signals: readonly Signal[],
-  window: TimelineWindow,
-  minGap = 0.03,
-): TimelineLane[] {
-  const bySource = new Map<SourceId, Signal[]>();
-  for (const signal of withinWindow(signals, window)) {
-    const bucket = bySource.get(signal.source);
-    if (bucket) bucket.push(signal);
-    else bySource.set(signal.source, [signal]);
+export function spanLabel(span: BucketSpan): string {
+  const first = dayMonth(span.start);
+  const last = dayMonth(Math.max(span.start, span.end - DAY));
+  if (first.day === last.day && first.month === last.month) return `${first.day} ${first.month}`;
+  if (first.month === last.month && first.year === last.year) {
+    return `${first.day}–${last.day} ${last.month}`;
   }
-
-  return [...bySource.entries()]
-    .map(([source, group]) => ({
-      source,
-      clusters: clusterSignals(group, window, minGap),
-      count: group.length,
-    }))
-    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
+  return `${first.day} ${first.month} – ${last.day} ${last.month}`;
 }
 
-/** `3 Mar` / `3 Mar 2025` when the year differs from the window's end. */
-export function clusterDateLabel(cluster: TimelineCluster, window: TimelineWindow): string {
-  const d = new Date(cluster.at);
-  const month = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
-  const sameYear = d.getUTCFullYear() === new Date(window.end).getUTCFullYear();
-  return sameYear
-    ? `${d.getUTCDate()} ${month}`
-    : `${d.getUTCDate()} ${month} ${d.getUTCFullYear()}`;
+/** The axis label under a column. */
+export function bucketAxisLabel(span: BucketSpan, unit: BucketUnit): string {
+  const { day, month, year } = dayMonth(span.start);
+  if (unit === 'quarter') return `${month} ${String(year).slice(2)}`;
+  return `${day} ${month}`;
 }

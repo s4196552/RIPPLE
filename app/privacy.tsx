@@ -9,7 +9,7 @@ import {
   type DataRecipient,
 } from '@/legal/privacy';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import { radius, space, tapSlop, tint, type } from '@/ui/theme';
+import { radius, space, tapSlop, type } from '@/ui/theme';
 
 /**
  * Privacy Policy.
@@ -207,11 +207,11 @@ const useStyles = makeStyles((c) => ({
     paddingHorizontal: space.sm,
     paddingVertical: 1,
     borderRadius: radius.sm,
-    backgroundColor: tint(c.warning, 0.16),
+    backgroundColor: c.warning,
   },
   optionalTagText: {
     ...type.tag,
-    color: c.warning,
+    color: c.onAccent,
   },
   recipientHost: {
     ...type.caption,
@@ -231,11 +231,15 @@ const useStyles = makeStyles((c) => ({
     gap: space.sm,
     padding: space.md,
     borderRadius: radius.md,
-    backgroundColor: tint(c.warning, 0.14),
+    backgroundColor: c.surfaceAlt,
+    borderLeftWidth: 3,
+    borderLeftColor: c.warning,
   },
+  // Ink, not the warning colour: the icon and the bar carry the colour, and
+  // the shared warning tone is below AA as small text on White.
   warningText: {
     ...type.caption,
-    color: c.warning,
+    color: c.text,
     flex: 1,
     lineHeight: 17,
   },

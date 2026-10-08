@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -13,23 +13,27 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDebounced } from '@/hooks/useDebounced';
-import { useKeyboardInset } from '@/hooks/useKeyboardInset';
+import { partyTag, withoutParty } from '@/lib/filing';
 import { isAbort } from '@/lib/http';
 import { describe, getProvider } from '@/providers/registry';
 import type { SourceId, SubjectResult } from '@/providers/types';
 import { useWatchlist } from '@/store/watchlist';
 import { Avatar } from '@/ui/components/Avatar';
+import { FollowedSheet } from '@/ui/components/FollowedSheet';
+import { FOLLOW_COPY } from '@/ui/followCopy';
+import { groupGlyph } from '@/ui/groupGlyph';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import { radius, space, tint, type } from '@/ui/theme';
+import { font, radius, space, tint, type } from '@/ui/theme';
 
 /**
- * Step 2 of the add flow: autocomplete for one source.
+ * Step 2 of the Follow flow: who or what, within one source.
  *
- * Search runs on a debounced value, and every in-flight request is aborted when
- * a newer keystroke arrives — otherwise a slow response for "pel" can land
- * after "pelosi" and overwrite the correct suggestions.
+ * With nothing typed the provider offers its standing choices — every
+ * Republican, every executive order — so the screen opens on something to
+ * follow rather than an empty field. Search runs on a debounced value, and
+ * every in-flight request is aborted when a newer keystroke arrives, otherwise
+ * a slow response for "pel" can land after "pelosi" and overwrite it.
  */
 export default function SearchScreen() {
   const c = useTheme();
@@ -40,35 +44,47 @@ export default function SearchScreen() {
 
   const provider = getProvider(source);
   const meta = describe(source);
+  const copy = FOLLOW_COPY[source];
 
   const [query, setQuery] = useState('');
+  const [focused, setFocused] = useState(false);
   const [results, setResults] = useState<SubjectResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Handles added this session, for the inline "Added" confirmation. */
-  const [justAdded, setJustAdded] = useState<string[]>([]);
+  const [followed, setFollowed] = useState<SubjectResult | null>(null);
 
   const debouncedQuery = useDebounced(query, 250);
   const abortRef = useRef<AbortController | null>(null);
-  const keyboardInset = useKeyboardInset();
-  const insets = useSafeAreaInsets();
+  const inputRef = useRef<TextInput>(null);
 
   const add = useWatchlist((s) => s.add);
   const subjects = useWatchlist((s) => s.subjects);
 
-  useEffect(() => {
-    navigation.setOptions({ title: `Add ${meta.subjectNoun}` });
-  }, [navigation, meta.subjectNoun]);
+  const searchMode = focused || query.length > 0;
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: '',
+      headerLeft: () => (
+        <View style={styles.headerLeft}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.back}
+            accessibilityRole="button"
+            accessibilityLabel="Back to sources"
+          >
+            <Ionicons name="chevron-back" size={24} color={c.text} />
+          </Pressable>
+          <Text style={styles.step}>Step 2 of 2 · {meta.label}</Text>
+        </View>
+      ),
+    });
+  }, [navigation, router, styles, c, meta.label]);
 
   useEffect(() => {
     const term = debouncedQuery.trim();
     abortRef.current?.abort();
 
-    // An empty term is asked of the provider rather than short-circuited here,
-    // because "nothing typed yet" is where a source gets to offer its standing
-    // categories — every Republican, every executive order. Sources with
-    // nothing to suggest return an empty list and the typing hint shows as
-    // before.
     const controller = new AbortController();
     abortRef.current = controller;
     setSearching(true);
@@ -92,73 +108,83 @@ export default function SearchScreen() {
     return () => controller.abort();
   }, [debouncedQuery, provider]);
 
-  const onAdd = (result: SubjectResult) => {
+  // Results replace themselves silently as you type, so the settled count is
+  // announced — never mid-search.
+  useEffect(() => {
+    if (searching || !debouncedQuery.trim()) return;
+    AccessibilityInfo.announceForAccessibility(
+      results.length === 0 ? 'No matches' : `${results.length} result${results.length === 1 ? '' : 's'}`,
+    );
+  }, [results, searching, debouncedQuery]);
+
+  const onFollow = (result: SubjectResult) => {
     add(result);
-    setJustAdded((prev) => [...prev, result.handle.toLowerCase()]);
+    setFollowed(result);
     if (Platform.OS !== 'web') {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   };
 
-  const alreadyWatched = (handle: string) =>
-    subjects.some(
-      (s) => s.source === source && s.handle.toLowerCase() === handle.toLowerCase(),
-    );
+  const isFollowing = (handle: string) =>
+    subjects.some((s) => s.source === source && s.handle.toLowerCase() === handle.toLowerCase());
 
-  // Results replace themselves silently as you type: sighted users see the list
-  // change, but nothing moves focus, so assistive tech had no way to know the
-  // search had even finished. Announced only once settled, never mid-search.
-  useEffect(() => {
-    if (searching || !debouncedQuery.trim()) return;
-    AccessibilityInfo.announceForAccessibility(
-      results.length === 0
-        ? 'No matches'
-        : `${results.length} result${results.length === 1 ? '' : 's'}`,
-    );
-  }, [results, searching, debouncedQuery]);
+  const cancel = () => {
+    setQuery('');
+    inputRef.current?.blur();
+  };
+
+  const term = query.trim();
+  const sectionTitle = term
+    ? 'Matches'
+    : source === 'congress'
+      ? 'Follow a whole party'
+      : 'Suggestions';
 
   return (
-    /*
-     * The done bar is pinned to the bottom and the field autofocuses, so
-     * without this inset the keyboard covers the only way out of the screen.
-     * See `useKeyboardInset` for why `KeyboardAvoidingView` is not used.
-     *
-     * Both insets, because the bar has to clear two different things. The
-     * keyboard event reports its height in content space, while an edge-to-edge
-     * window extends underneath the system navigation bar — so the keyboard's
-     * true top is `height + insets.bottom` from the window's bottom edge.
-     * (Measured on a Pixel 7: keyboard reported 820px, actually topped out
-     * 870px up, and 50px is exactly this device's gesture-bar inset.) With the
-     * keyboard closed the term goes to zero and `insets.bottom` alone keeps the
-     * bar off the gesture pill, which it needed anyway.
-     */
-    <View style={[styles.screen, { paddingBottom: keyboardInset + insets.bottom }]}>
-      <View style={[styles.searchBar, { borderColor: tint(meta.color, 0.3) }]}>
-        <Ionicons name="search" size={16} color={meta.color} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder={placeholderFor(source)}
-          placeholderTextColor={c.textMuted}
-          style={styles.input}
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoFocus
-          returnKeyType="search"
-          accessibilityLabel={`Search ${meta.label}`}
-        />
-        {searching ? (
-          <ActivityIndicator size="small" color={c.textMuted} />
-        ) : query.length > 0 ? (
-          <Pressable
-            onPress={() => setQuery('')}
-            hitSlop={space.md}
-            accessibilityRole="button"
-            accessibilityLabel="Clear search"
-          >
-            <Ionicons name="close-circle" size={18} color={c.textMuted} />
-          </Pressable>
-        ) : null}
+    <View style={styles.screen}>
+      <View style={styles.top}>
+        {!searchMode && (
+          <Text style={styles.title} accessibilityRole="header">
+            {copy.question}
+          </Text>
+        )}
+
+        <View style={styles.searchRow}>
+          <View style={[styles.field, focused && styles.fieldFocused]}>
+            <Ionicons name="search" size={20} color={c.textMuted} />
+            <TextInput
+              ref={inputRef}
+              value={query}
+              onChangeText={setQuery}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              placeholder={placeholderFor(source)}
+              placeholderTextColor={c.textSubtle}
+              style={styles.input}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel={`Search ${meta.label}`}
+            />
+            {searching && term ? (
+              <ActivityIndicator size="small" color={c.textMuted} />
+            ) : query.length > 0 ? (
+              <Pressable
+                onPress={() => setQuery('')}
+                style={styles.clear}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <Ionicons name="close-circle" size={18} color={c.textSubtle} />
+              </Pressable>
+            ) : null}
+          </View>
+          {searchMode && (
+            <Pressable onPress={cancel} style={styles.cancel} accessibilityRole="button">
+              <Text style={styles.cancelText}>Cancel</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {error && (
@@ -172,88 +198,130 @@ export default function SearchScreen() {
         data={results}
         keyExtractor={(item) => `${item.source}:${item.handle}`}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => {
-          const added = alreadyWatched(item.handle) || justAdded.includes(item.handle.toLowerCase());
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          results.length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionText} accessibilityRole="header">
+                {sectionTitle}
+              </Text>
+              {term ? (
+                <Text style={styles.sectionCount}>
+                  {results.length} match{results.length === 1 ? '' : 'es'}
+                </Text>
+              ) : null}
+            </View>
+          ) : null
+        }
+        renderItem={({ item, index }) => {
+          const following = isFollowing(item.handle);
+          const group = groupGlyph(item.source, item.handle);
+          const party = partyTag(item.subtitle);
+          const sub = party ? withoutParty(item.subtitle) : item.subtitle;
+          const first = index === 0;
+          const last = index === results.length - 1;
           return (
-            <Pressable
-              onPress={() => !added && onAdd(item)}
-              disabled={added}
-              style={({ pressed }) => [styles.row, pressed && !added && styles.rowPressed]}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: added }}
-              accessibilityLabel={
-                added
-                  ? `${item.displayName} is already on your watchlist`
-                  : `Add ${item.displayName}${item.subtitle ? `, ${item.subtitle}` : ''}`
-              }
-            >
+            // The list is drawn as one card: each row carries its share of the
+            // border so the FlatList can still recycle rows.
+            <View style={[styles.row, first && styles.rowFirst, last && styles.rowLast, !first && styles.rowRule]}>
               <Avatar
                 uri={item.avatarUrl}
                 name={item.displayName}
-                accent={meta.color}
+                glyph={group?.glyph}
+                size={44}
                 square={source === 'stocks' || source === 'insider'}
               />
-
               <View style={styles.rowBody}>
                 <Text style={styles.rowName} numberOfLines={1}>
-                  {item.displayName}
+                  <Highlighted text={item.displayName} term={term} />
                 </Text>
-                {item.subtitle ? (
-                  <Text style={styles.rowSubtitle} numberOfLines={1}>
-                    {item.subtitle}
-                  </Text>
+                {party || sub ? (
+                  <View style={styles.subLine}>
+                    {party ? (
+                      <View style={styles.party}>
+                        <Text style={styles.partyText}>{party}</Text>
+                      </View>
+                    ) : null}
+                    {sub ? (
+                      <Text style={styles.rowSubtitle} numberOfLines={1}>
+                        {sub}
+                      </Text>
+                    ) : null}
+                  </View>
                 ) : null}
               </View>
 
-              {added ? (
-                <View style={styles.addedTag}>
-                  <Ionicons name="checkmark" size={13} color={c.up} />
-                  <Text style={styles.addedText}>Added</Text>
+              {following ? (
+                <View
+                  style={styles.following}
+                  accessible
+                  accessibilityLabel={`Following ${item.displayName}`}
+                >
+                  <Ionicons name="checkmark" size={16} color={c.accent} />
+                  <Text style={styles.followText}>Following</Text>
                 </View>
               ) : (
-                <View style={[styles.addButton, { backgroundColor: tint(meta.color, 0.18) }]}>
-                  <Ionicons name="add" size={17} color={meta.color} />
-                </View>
+                <Pressable
+                  onPress={() => onFollow(item)}
+                  style={({ pressed }) => [styles.follow, pressed && styles.pressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Follow ${item.displayName}${item.subtitle ? `, ${item.subtitle}` : ''}`}
+                >
+                  <Ionicons name="add" size={16} color={c.accent} />
+                  <Text style={styles.followText}>Follow</Text>
+                </Pressable>
               )}
-            </Pressable>
+            </View>
           );
         }}
         ListEmptyComponent={
-          <View style={styles.hint}>
-            <Text style={styles.hintText}>
-              {query.trim().length === 0
-                ? hintFor(source)
-                : searching
-                  ? 'Searching…'
-                  : 'No matches. Try a different spelling.'}
-            </Text>
-          </View>
+          term && !searching ? (
+            <Text style={styles.hint}>No matches. Try a different spelling.</Text>
+          ) : null
+        }
+        ListFooterComponent={
+          !term ? <Text style={styles.hint}>{hintFor(source)}</Text> : null
         }
       />
 
-      {justAdded.length > 0 && (
-        <Pressable
-          style={({ pressed }) => [styles.doneBar, pressed && { opacity: 0.85 }]}
-          onPress={() => router.dismissTo('/')}
-          accessibilityRole="button"
-          accessibilityLabel={`Done. ${justAdded.length} added. Return to feed.`}
-        >
-          <Text style={styles.doneText}>Done · {justAdded.length} added</Text>
-          <Ionicons name="arrow-forward" size={16} color={c.onAccent} />
-        </Pressable>
-      )}
+      <FollowedSheet
+        subject={followed}
+        onDismiss={() => setFollowed(null)}
+        onDone={() => {
+          setFollowed(null);
+          router.dismissTo('/');
+        }}
+        onFollowAnother={() => {
+          setFollowed(null);
+          router.back();
+        }}
+      />
     </View>
+  );
+}
+
+/** The name with the typed part marked, as the design's search shows it. */
+function Highlighted({ text, term }: { text: string; term: string }) {
+  const styles = useStyles();
+  const at = term ? text.toLowerCase().indexOf(term.toLowerCase()) : -1;
+  if (at < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, at)}
+      <Text style={styles.mark}>{text.slice(at, at + term.length)}</Text>
+      {text.slice(at + term.length)}
+    </>
   );
 }
 
 function placeholderFor(source: SourceId): string {
   switch (source) {
     case 'congress':
-      return 'Name, district, or a party';
+      return 'Search members, states or districts';
     case 'insider':
       return 'Company or ticker';
     case 'policy':
-      return 'Topic, or pick a document type';
+      return 'Topic, or a document type';
     case 'stocks':
       return 'Ticker or company name';
   }
@@ -262,7 +330,7 @@ function placeholderFor(source: SourceId): string {
 function hintFor(source: SourceId): string {
   switch (source) {
     case 'congress':
-      return 'Follow a whole party, or search any House member who has filed a trade disclosure — try a surname, or a district like CA-11.';
+      return 'Search matches names and districts (“CA-11”). Only members who have filed a trade disclosure appear.';
     case 'insider':
       return 'Search a company to follow its executives’ and directors’ Form 4 filings — try NVDA, or “Apple”.';
     case 'policy':
@@ -277,106 +345,209 @@ const useStyles = makeStyles((c) => ({
     flex: 1,
     backgroundColor: c.bg,
   },
-  searchBar: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.sm,
-    margin: space.lg,
-    paddingHorizontal: space.md,
-    // `minHeight` and padding rather than a fixed 46: the input's text scales
-    // with the system text size, and a fixed box would clip it for anyone who
-    // has turned that up. This is the only text-bearing container in the app
-    // that was pinned to an exact height.
-    minHeight: 46,
-    paddingVertical: space.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
+    gap: space.xs,
+    paddingLeft: space.sm,
+  },
+  back: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  step: {
+    ...type.caption,
+    fontFamily: font.semibold,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    color: c.textSubtle,
+  },
+  top: {
+    paddingHorizontal: space.lg,
+    paddingTop: space.xs,
+  },
+  title: {
+    ...type.display,
+    color: c.text,
+    marginBottom: 14,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+  },
+  field: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 48,
+    paddingLeft: 14,
+    paddingRight: 6,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: c.textMuted,
     backgroundColor: c.surface,
+  },
+  fieldFocused: {
+    borderWidth: 2,
+    borderColor: c.accent,
   },
   input: {
     flex: 1,
     ...type.body,
+    fontSize: 16,
+    fontFamily: font.medium,
     color: c.text,
-    // RN vertically centres single-line inputs inconsistently on Android.
-    paddingVertical: 0,
+    minWidth: 0,
+    paddingVertical: space.sm,
+  },
+  clear: {
+    width: 36,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancel: {
+    minHeight: 44,
+    paddingHorizontal: space.sm,
+    justifyContent: 'center',
+  },
+  cancelText: {
+    ...type.body,
+    fontFamily: font.semibold,
+    color: c.text,
   },
   errorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
     paddingHorizontal: space.lg,
-    paddingBottom: space.sm,
+    paddingTop: space.md,
   },
   errorText: {
     ...type.caption,
     color: c.textMuted,
   },
+  listContent: {
+    paddingHorizontal: space.lg,
+    paddingBottom: space.xxl,
+  },
+  section: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 22,
+    paddingBottom: space.sm,
+  },
+  sectionText: {
+    ...type.caption,
+    fontFamily: font.semibold,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    color: c.textSubtle,
+  },
+  sectionCount: {
+    ...type.caption,
+    color: c.textSubtle,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    paddingHorizontal: space.lg,
-    paddingVertical: space.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
-  },
-  rowPressed: {
+    minHeight: 64,
+    paddingVertical: 10,
+    paddingLeft: 14,
+    paddingRight: space.md,
     backgroundColor: c.surface,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+  },
+  rowFirst: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+  },
+  rowLast: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+  },
+  rowRule: {
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   rowBody: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   rowName: {
-    ...type.label,
+    ...type.heading,
     color: c.text,
   },
-  rowSubtitle: {
-    ...type.caption,
-    color: c.textMuted,
+  mark: {
+    backgroundColor: tint(c.accent, 0.2),
+    color: c.text,
   },
-  addButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addedTag: {
+  subLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: space.sm,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: tint(c.up, 0.14),
+    gap: 6,
   },
-  addedText: {
+  party: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  partyText: {
     ...type.micro,
-    color: c.up,
+    fontFamily: font.bold,
+    letterSpacing: 0.6,
+    color: c.textMuted,
+  },
+  rowSubtitle: {
+    ...type.label,
+    fontFamily: font.regular,
+    color: c.textSubtle,
+    flexShrink: 1,
+  },
+  // Outlined in the accent; the word stays ink (small text never sits in an
+  // accent colour — see `@/ui/theme`).
+  follow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: c.accent,
+  },
+  following: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    backgroundColor: tint(c.accent, 0.16),
+  },
+  followText: {
+    ...type.label,
+    fontSize: 14,
+    color: c.text,
+  },
+  pressed: {
+    backgroundColor: c.surfaceAlt,
   },
   hint: {
-    paddingHorizontal: space.xl,
-    paddingTop: space.xl,
-  },
-  hintText: {
-    ...type.body,
-    color: c.textMuted,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  doneBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space.sm,
-    margin: space.lg,
-    paddingVertical: space.md,
-    borderRadius: radius.pill,
-    backgroundColor: c.accent,
-  },
-  doneText: {
-    ...type.label,
-    color: c.onAccent,
+    ...type.bodyTight,
+    color: c.textSubtle,
+    paddingTop: 18,
+    paddingHorizontal: space.xs,
   },
 }));

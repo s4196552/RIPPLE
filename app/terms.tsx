@@ -7,7 +7,7 @@ import {
   TERMS_SECTIONS,
 } from '@/legal/terms';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import { radius, space, tint, type } from '@/ui/theme';
+import { radius, space, type } from '@/ui/theme';
 
 /**
  * Terms of Service.
@@ -113,11 +113,15 @@ const useStyles = makeStyles((c) => ({
     gap: space.sm,
     padding: space.md,
     borderRadius: radius.md,
-    backgroundColor: tint(c.warning, 0.14),
+    backgroundColor: c.surfaceAlt,
+    borderLeftWidth: 3,
+    borderLeftColor: c.warning,
   },
+  // Ink, not the warning colour: the icon and the bar carry the colour, and
+  // the shared warning tone is below AA as small text on White.
   warningText: {
     ...type.caption,
-    color: c.warning,
+    color: c.text,
     flex: 1,
     lineHeight: 17,
   },

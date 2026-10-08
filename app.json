@@ -7,7 +7,7 @@
     "scheme": "ripple",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
-    "primaryColor": "#5B8DEF",
+    "primaryColor": "#21A1E4",
     "description": "A reader for public disclosure records: congressional trade filings, SEC Form 4 insider transactions and presidential actions, merged into one reverse-chronological feed.",
     "ios": {
       "supportsTablet": true,
@@ -40,7 +40,7 @@
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B0E13"
+        "backgroundColor": "#FFFFFF"
       },
       "permissions": ["android.permission.INTERNET"],
       "blockedPermissions": [

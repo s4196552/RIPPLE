@@ -178,3 +178,22 @@ describe('restorePreview', () => {
     assert.equal(preview.summary, '1 to add');
   });
 });
+
+describe('timed mutes', () => {
+  it('carries when a mute lifts, and reads it back', () => {
+    const backup = createBackup([watched({ muted: true, mutedUntil: 5_000 })]);
+    assert.equal(backup.subjects[0]?.mutedUntil, 5_000);
+    const result = parseBackup(serializeBackup(backup));
+    assert.ok(result.ok);
+    assert.equal(result.subjects[0]?.mutedUntil, 5_000);
+  });
+
+  it('leaves the end off a mute with none, and off an unmuted follow', () => {
+    const [open, off] = createBackup([
+      watched({ muted: true, mutedUntil: null }),
+      watched({ handle: 'other', muted: false, mutedUntil: 5_000 }),
+    ]).subjects;
+    assert.equal(open?.mutedUntil, undefined);
+    assert.equal(off?.mutedUntil, undefined);
+  });
+});

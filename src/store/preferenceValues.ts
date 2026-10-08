@@ -7,7 +7,7 @@
  */
 
 /** What the user picked, which is not the same as the theme being rendered. */
-export type ThemePreference = 'system' | 'dark' | 'light';
+export type ThemePreference = 'system' | 'dark' | 'black' | 'light';
 
 /**
  * Which colour pair carries direction.
@@ -29,10 +29,10 @@ export type LinkTarget = 'in-app' | 'system';
 export interface Preferences {
   theme: ThemePreference;
   /**
-   * Green/red, or a colour-vision-safe pair.
+   * Teal/orange (colour-vision-safe, the default) or green/red.
    *
-   * Orthogonal to `theme` on purpose: someone can want light mode and the
-   * accessible tones, or either one on its own.
+   * Orthogonal to `theme` on purpose: someone can want White and green/red,
+   * or any other combination.
    */
   tones: TonePreference;
   /** Haptic feedback on press. Ignored on web, which has no haptics. */
@@ -47,6 +47,11 @@ export interface Preferences {
    * they explain.
    */
   dailyDigest: boolean;
+  /**
+   * The introduction has been seen. Set when it is finished or skipped, and
+   * cleared from Settings to show it again.
+   */
+  onboarded: boolean;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -54,15 +59,16 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // defaulting to the device setting is the only choice that does not override
   // something the user already told their phone.
   theme: 'system',
-  // Classic by default: green/red is what every comparable product uses, and
-  // quietly reassigning it would confuse more people than it helps. The
-  // alternative is one tap away in Settings.
-  tones: 'classic',
+  // Teal/orange by default: it is the redesign's pair, shared by all three
+  // modes, and it stays readable with red-green colour blindness. Green/red is
+  // one tap away in Settings for anyone who wants the convention.
+  tones: 'accessible',
   haptics: true,
   refreshInterval: 10,
   startTab: 'index',
   linkTarget: 'in-app',
   dailyDigest: true,
+  onboarded: false,
 };
 
 /** Milliseconds for a refresh interval, or null when polling is off. */
@@ -70,7 +76,7 @@ export function pollIntervalMs(interval: RefreshInterval): number | null {
   return interval === 'off' ? null : interval * 60_000;
 }
 
-const THEMES: ThemePreference[] = ['system', 'dark', 'light'];
+const THEMES: ThemePreference[] = ['system', 'dark', 'black', 'light'];
 const TONES: TonePreference[] = ['classic', 'accessible'];
 const INTERVALS: RefreshInterval[] = [5, 10, 30, 'off'];
 const START_TABS: StartTab[] = ['index', 'trades', 'timeline', 'watchlist'];
@@ -99,6 +105,7 @@ export function sanitize(stored: unknown): Partial<Preferences> {
     clean.linkTarget = raw.linkTarget as LinkTarget;
   }
   if (typeof raw.dailyDigest === 'boolean') clean.dailyDigest = raw.dailyDigest;
+  if (typeof raw.onboarded === 'boolean') clean.onboarded = raw.onboarded;
 
   return clean;
 }

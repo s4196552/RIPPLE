@@ -9,9 +9,12 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/*.test.ts\""
+    "test": "node --test \"test/*.test.ts\"",
+    "scrape:house": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/scrape-house-ptrs.ts"
   },
   "dependencies": {
+    "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
+    "@expo-google-fonts/instrument-sans": "^0.4.2",
     "@expo/metro-runtime": "~57.0.15",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -19,6 +22,7 @@
     "expo-constants": "~57.0.18",
     "expo-font": "~57.0.4",
     "expo-haptics": "~57.0.3",
+    "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.10",
     "expo-router": "~57.0.21",
     "expo-status-bar": "~57.0.1",
@@ -37,6 +41,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
+    "pdfjs-dist": "^4.10.38",
     "typescript": "~5.9.2"
   }
 }

@@ -240,6 +240,11 @@ describe('clusterBuyers', () => {
     assert.equal(clusterBuyers(trades, 'NVDA', AT), 1);
   });
 
+  it('ignores options — a bought put is not a buyer of the stock', () => {
+    const trades = [trade('Nancy Pelosi', 'NVDA', 3), { ...trade('Ro Khanna', 'NVDA', 3), option: true }];
+    assert.equal(clusterBuyers(trades, 'NVDA', AT), 1);
+  });
+
   it('ignores sales', () => {
     const trades = [
       trade('Nancy Pelosi', 'NVDA', 3),
@@ -296,6 +301,13 @@ describe('normalizeTrade', () => {
 
   it('upcases the ticker', () => {
     assert.equal(normalizeTrade(onTime, actor).ticker, 'NVDA');
+  });
+
+  it('supersedes the filing card a scraped trade was read from', () => {
+    assert.deepEqual(normalizeTrade({ ...onTime, filingId: '20033751' }, actor).supersedes, [
+      'congress:20033751',
+    ]);
+    assert.equal(normalizeTrade(onTime, actor).supersedes, undefined);
   });
 
   it('sorts on the disclosure date, since that is the news event', () => {

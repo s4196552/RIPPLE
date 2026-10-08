@@ -7,6 +7,7 @@ import {
   holdingSummary,
   qualityLabel,
   qualityTone,
+  toFilingRows,
   toTradeRows,
   topAssets,
 } from '../src/lib/trades.ts';
@@ -286,5 +287,24 @@ describe('holdingSummary', () => {
   it('omits a side that never happened', () => {
     const rows = toTradeRows([signal('b', NOW, { action: 'buy' })]);
     assert.equal(holdingSummary(topAssets(rows)[0]!), '1 bought');
+  });
+});
+
+describe('toFilingRows', () => {
+  it('keeps congressional reports that carry no ticker — the keyless House filings', () => {
+    const filing = signal('f', NOW, { ticker: null });
+    const trade = signal('t', NOW);
+    assert.deepEqual(toFilingRows([filing, trade]).map((s) => s.id), ['f']);
+  });
+
+  it('never duplicates a row the trade table already shows', () => {
+    const signals = [signal('t1', NOW), signal('t2', NOW - DAY, { action: 'sell' })];
+    assert.deepEqual(toFilingRows(signals), []);
+    assert.equal(toTradeRows(signals).length, 2);
+  });
+
+  it('leaves other sources alone, even without a ticker', () => {
+    const order = signal('eo', NOW, { ticker: null, source: 'policy' });
+    assert.deepEqual(toFilingRows([order]), []);
   });
 });

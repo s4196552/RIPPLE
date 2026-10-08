@@ -1,0 +1,129 @@
+{
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 52.1,
+  "transition": 0.65,
+  "scenes": [
+    {
+      "name": "opening",
+      "duration": 6,
+      "kind": "title"
+    },
+    {
+      "name": "signals",
+      "duration": 9,
+      "label": "01 / UNIFIED SIGNALS",
+      "heading": [
+        "One feed.",
+        "Four perspectives."
+      ],
+      "body": [
+        "Congress. Insiders. Policy. Stocks.",
+        "Public activity, brought into focus."
+      ],
+      "file": "06-feed-personal.png",
+      "x": 1236,
+      "y": 72,
+      "w": 396,
+      "h": 857,
+      "mode": "phone"
+    },
+    {
+      "name": "trades",
+      "duration": 9,
+      "label": "02 / DISCLOSED TRADES",
+      "heading": [
+        "Every trade,",
+        "in context."
+      ],
+      "body": [
+        "Read the disclosure.",
+        "See the price reaction.",
+        "Return to the original source."
+      ],
+      "file": "08-trades-table.png",
+      "crop": [
+        0,
+        215,
+        1170,
+        1420
+      ],
+      "x": 1125,
+      "y": 196,
+      "w": 601,
+      "h": 730,
+      "mode": "panel"
+    },
+    {
+      "name": "timeline",
+      "duration": 9,
+      "label": "03 / SHARED TIMELINE",
+      "heading": [
+        "See the sequence.",
+        "Find the context."
+      ],
+      "body": [
+        "Bring every source onto one axis.",
+        "Explore how public events align."
+      ],
+      "file": "11-timeline-90d.png",
+      "crop": [
+        0,
+        185,
+        1170,
+        1020
+      ],
+      "x": 964,
+      "y": 216,
+      "w": 824,
+      "h": 718,
+      "mode": "panel"
+    },
+    {
+      "name": "follow",
+      "duration": 8,
+      "label": "04 / FOLLOW WHAT MATTERS",
+      "heading": [
+        "Start with",
+        "your interests."
+      ],
+      "body": [
+        "Choose a source.",
+        "Find a person, company or topic.",
+        "Make the feed your own."
+      ],
+      "file": "02-add-choose-source.png",
+      "second": "04-add-member-added.png",
+      "x": 1236,
+      "y": 72,
+      "w": 396,
+      "h": 857,
+      "mode": "phone"
+    },
+    {
+      "name": "watchlist",
+      "duration": 9,
+      "label": "05 / PERSONAL WATCHLIST",
+      "heading": [
+        "Your people.",
+        "Your perspective."
+      ],
+      "body": [
+        "A focused watchlist across sources.",
+        "Keep the subjects that matter close."
+      ],
+      "file": "13-watchlist.png",
+      "x": 1236,
+      "y": 72,
+      "w": 396,
+      "h": 857,
+      "mode": "phone"
+    },
+    {
+      "name": "closing",
+      "duration": 6,
+      "kind": "title"
+    }
+  ]
+}

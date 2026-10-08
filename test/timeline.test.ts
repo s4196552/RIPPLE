@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  buildLanes,
-  clusterDateLabel,
-  clusterSignals,
-  positionOf,
-  ticksFor,
+  bucketAxisLabel,
+  bucketUnitFor,
+  busiestBuckets,
+  fillBuckets,
+  fixedSpans,
+  monthSpans,
+  spanLabel,
   windowFor,
-  withinWindow,
   type TimelineWindow,
 } from '../src/lib/timeline.ts';
 import type { Signal, SourceId } from '../src/providers/types.ts';
@@ -73,210 +74,107 @@ describe('windowFor', () => {
   });
 });
 
-describe('positionOf', () => {
-  const w = windowOf(10);
-
-  it('places the window start at 0 and the end at 1', () => {
-    assert.equal(positionOf(w.start, w), 0);
-    assert.equal(positionOf(w.end, w), 1);
+describe('fixedSpans', () => {
+  it('lays whole weeks back from the end, oldest first', () => {
+    const spans = fixedSpans(windowOf(90), 'week');
+    assert.equal(spans.length, 13);
+    assert.ok(spans[0]!.start < spans[1]!.start);
+    assert.equal(spans[12]!.end, NOW + DAY, 'the last span runs to the end of the final day');
+    assert.equal(spans[12]!.end - spans[12]!.start, 7 * DAY);
   });
 
-  it('places the midpoint at 0.5', () => {
-    assert.equal(positionOf(NOW - 5 * DAY, w), 0.5);
-  });
-
-  it('clamps anything outside the window', () => {
-    assert.equal(positionOf(w.start - 100 * DAY, w), 0);
-    assert.equal(positionOf(w.end + 100 * DAY, w), 1);
-  });
-
-  it('returns 0 rather than NaN for a degenerate window', () => {
-    assert.equal(positionOf(NOW, { start: NOW, end: NOW, days: 1 }), 0);
+  it('gives 30 days a column per calendar day', () => {
+    const spans = fixedSpans({ start: NOW - 30 * DAY + 5000, end: NOW + 5000, days: 30 }, 'day');
+    assert.equal(spans.length, 30);
+    assert.equal(spans[29]!.start, NOW, 'breaks fall on UTC midnight');
   });
 });
 
-describe('withinWindow', () => {
-  const w = windowOf(10);
-
-  it('keeps only signals inside the window, newest first', () => {
-    const inside = [signal('a', NOW - 1 * DAY), signal('b', NOW - 8 * DAY)];
-    const outside = [signal('c', NOW - 40 * DAY), signal('d', NOW + 5 * DAY)];
-
-    const kept = withinWindow([...outside, ...inside], w);
-    assert.deepEqual(kept.map((s) => s.id), ['a', 'b']);
-  });
-
-  it('includes signals exactly on the boundaries', () => {
-    const kept = withinWindow([signal('start', w.start), signal('end', w.end)], w);
-    assert.equal(kept.length, 2);
+describe('bucketUnitFor', () => {
+  it('follows the range, and the data for all-time', () => {
+    assert.equal(bucketUnitFor('30d', windowOf(30)), 'day');
+    assert.equal(bucketUnitFor('90d', windowOf(90)), 'week');
+    assert.equal(bucketUnitFor('1y', windowOf(365)), 'month');
+    assert.equal(bucketUnitFor('all', windowOf(60)), 'week');
+    assert.equal(bucketUnitFor('all', windowOf(900)), 'quarter');
   });
 });
 
-describe('ticksFor', () => {
-  it('spans the window end to end', () => {
-    const ticks = ticksFor(windowOf(30), 4);
-
-    assert.equal(ticks.length, 4);
-    assert.equal(ticks[0]?.position, 0);
-    assert.equal(ticks[3]?.position, 1);
-  });
-
-  it('labels a short window with a day number', () => {
-    assert.match(ticksFor(windowOf(30), 4)[0]!.label, /^\d{1,2} [A-Z][a-z]{2}$/);
-  });
-
-  it('labels a mid window with the month alone', () => {
-    assert.match(ticksFor(windowOf(200), 4)[0]!.label, /^[A-Z][a-z]{2}$/);
-  });
-
-  it('adds a year once the window is longer than one', () => {
-    assert.match(ticksFor(windowOf(500), 4)[0]!.label, /^[A-Z][a-z]{2} \d{2}$/);
-  });
-
-  it('returns nothing when asked for fewer than two', () => {
-    assert.deepEqual(ticksFor(windowOf(30), 1), []);
+describe('monthSpans', () => {
+  it('covers whole calendar months, ending with the current one', () => {
+    const spans = monthSpans(12, NOW);
+    assert.equal(spans.length, 12);
+    assert.equal(spans[11]!.start, Date.UTC(2026, 5, 1));
+    assert.equal(spans[0]!.start, Date.UTC(2025, 6, 1));
+    assert.equal(spans[0]!.end, Date.UTC(2025, 7, 1));
   });
 });
 
-describe('clusterSignals', () => {
-  const w = windowOf(100);
+describe('fillBuckets', () => {
+  const spans = fixedSpans(windowOf(14), 'week');
 
-  it('keeps well-separated signals apart', () => {
-    const clusters = clusterSignals(
-      [signal('a', NOW - 90 * DAY), signal('b', NOW - 50 * DAY), signal('c', NOW - 5 * DAY)],
-      w,
-      0.03,
-    );
-    assert.equal(clusters.length, 3);
-  });
-
-  it('collapses signals that would overlap into one', () => {
-    // Three filings in the same couple of days: one tappable marker, not a smear.
-    const clusters = clusterSignals(
-      [signal('a', NOW - 50 * DAY), signal('b', NOW - 49 * DAY), signal('c', NOW - 48 * DAY)],
-      w,
-      0.05,
-    );
-
-    assert.equal(clusters.length, 1);
-    assert.equal(clusters[0]?.signals.length, 3);
-  });
-
-  it('orders a cluster newest first, so the lead is the latest', () => {
-    const clusters = clusterSignals(
-      [signal('old', NOW - 50 * DAY), signal('new', NOW - 48 * DAY)],
-      w,
-      0.05,
-    );
-    assert.equal(clusters[0]?.signals[0]?.id, 'new');
-    assert.equal(clusters[0]?.at, NOW - 48 * DAY);
-  });
-
-  it('returns clusters in left-to-right order', () => {
-    const clusters = clusterSignals(
-      [signal('c', NOW - 5 * DAY), signal('a', NOW - 90 * DAY), signal('b', NOW - 50 * DAY)],
-      w,
-      0.01,
-    );
-    assert.deepEqual(clusters.map((c) => c.signals[0]!.id), ['a', 'b', 'c']);
-  });
-
-  it('takes a direction only when the whole cluster agrees', () => {
-    const agree = clusterSignals(
-      [signal('a', NOW - 50 * DAY, 'congress', 'up'), signal('b', NOW - 49 * DAY, 'congress', 'up')],
-      w,
-      0.05,
-    );
-    assert.equal(agree[0]?.tone, 'up');
-
-    const mixed = clusterSignals(
-      [signal('a', NOW - 50 * DAY, 'congress', 'up'), signal('b', NOW - 49 * DAY, 'congress', 'down')],
-      w,
-      0.05,
-    );
-    assert.equal(mixed[0]?.tone, 'neutral', 'a mixed cluster must not claim a direction');
-  });
-
-  it('treats an accentless signal as neutral', () => {
-    assert.equal(clusterSignals([signal('a', NOW - 50 * DAY)], w, 0.05)[0]?.tone, 'neutral');
-  });
-
-  it('handles an empty input', () => {
-    assert.deepEqual(clusterSignals([], w), []);
-  });
-});
-
-describe('buildLanes', () => {
-  const w = windowOf(100);
-
-  it('gives each source its own lane', () => {
-    const lanes = buildLanes(
+  it('counts by direction and by source', () => {
+    const [older, newer] = fillBuckets(
       [
-        signal('a', NOW - 10 * DAY, 'congress'),
-        signal('b', NOW - 20 * DAY, 'insider'),
-        signal('c', NOW - 30 * DAY, 'policy'),
+        signal('a', NOW - 1 * DAY, 'congress', 'up'),
+        signal('b', NOW - 2 * DAY, 'insider', 'down'),
+        signal('c', NOW - 3 * DAY, 'policy'),
+        signal('d', NOW - 10 * DAY, 'congress', 'up'),
       ],
-      w,
+      spans,
     );
-    assert.equal(lanes.length, 3);
+    assert.deepEqual([newer!.up, newer!.down, newer!.neutral, newer!.total], [1, 1, 1, 3]);
+    assert.deepEqual(newer!.bySource, { congress: 1, insider: 1, policy: 1 });
+    assert.equal(older!.total, 1);
   });
 
-  it('drops sources with nothing in the window', () => {
-    // A blank row reads as a rendering failure.
-    const lanes = buildLanes([signal('a', NOW - 10 * DAY, 'congress')], w);
-    assert.deepEqual(lanes.map((l) => l.source), ['congress']);
+  it('includes a signal stamped exactly at the window end', () => {
+    const buckets = fillBuckets([signal('a', NOW, 'congress', 'up')], spans);
+    assert.equal(buckets[1]!.up, 1);
   });
 
-  it('orders the busiest lane first', () => {
-    const lanes = buildLanes(
-      [
-        signal('a', NOW - 10 * DAY, 'insider'),
-        signal('b', NOW - 20 * DAY, 'congress'),
-        signal('c', NOW - 30 * DAY, 'congress'),
-      ],
-      w,
+  it('drops signals outside every span', () => {
+    const buckets = fillBuckets([signal('old', NOW - 400 * DAY)], spans);
+    assert.equal(buckets.reduce((n, b) => n + b.total, 0), 0);
+  });
+
+  it('keeps each bucket newest first', () => {
+    const [, newer] = fillBuckets(
+      [signal('a', NOW - 3 * DAY), signal('b', NOW - 1 * DAY)],
+      spans,
     );
-    assert.equal(lanes[0]?.source, 'congress');
-    assert.equal(lanes[0]?.count, 2);
-  });
-
-  it('counts signals, not clusters', () => {
-    const lanes = buildLanes(
-      [
-        signal('a', NOW - 50 * DAY, 'congress'),
-        signal('b', NOW - 49 * DAY, 'congress'),
-        signal('c', NOW - 48 * DAY, 'congress'),
-      ],
-      w,
-      0.5,
-    );
-    assert.equal(lanes[0]?.clusters.length, 1, 'they collapse visually');
-    assert.equal(lanes[0]?.count, 3, 'but the count reports all three');
-  });
-
-  it('excludes signals outside the window from the count', () => {
-    const lanes = buildLanes(
-      [signal('a', NOW - 10 * DAY, 'congress'), signal('old', NOW - 900 * DAY, 'congress')],
-      w,
-    );
-    assert.equal(lanes[0]?.count, 1);
-  });
-
-  it('returns nothing for no signals', () => {
-    assert.deepEqual(buildLanes([], w), []);
+    assert.deepEqual(newer!.signals.map((s) => s.id), ['b', 'a']);
   });
 });
 
-describe('clusterDateLabel', () => {
-  const w = windowOf(30);
+describe('busiestBuckets', () => {
+  it('ranks by count, breaks ties toward the recent, and skips empty columns', () => {
+    const buckets = fillBuckets(
+      [
+        signal('a', NOW - 1 * DAY),
+        signal('b', NOW - 8 * DAY),
+        signal('c', NOW - 9 * DAY),
+        signal('d', NOW - 15 * DAY),
+      ],
+      fixedSpans(windowOf(28), 'week'),
+    );
+    const top = busiestBuckets(buckets);
+    assert.deepEqual(top.map((b) => b.total), [2, 1, 1]);
+    assert.ok(top[1]!.start > top[2]!.start);
+  });
+});
 
-  it('omits the year within the window year', () => {
-    const [cluster] = clusterSignals([signal('a', Date.UTC(2026, 2, 3))], w);
-    assert.equal(clusterDateLabel(cluster!, w), '3 Mar');
+describe('spanLabel', () => {
+  it('reads the way people say a range', () => {
+    const at = (m: number, d: number) => Date.UTC(2026, m, d);
+    assert.equal(spanLabel({ start: at(9, 7), end: at(9, 8) }), '7 Oct');
+    assert.equal(spanLabel({ start: at(9, 1), end: at(9, 8) }), '1–7 Oct');
+    assert.equal(spanLabel({ start: at(8, 28), end: at(9, 5) }), '28 Sep – 4 Oct');
   });
 
-  it('includes the year when it differs', () => {
-    const [cluster] = clusterSignals([signal('a', Date.UTC(2024, 2, 3))], w);
-    assert.equal(clusterDateLabel(cluster!, w), '3 Mar 2024');
+  it('labels the axis by start date, or month and year for quarters', () => {
+    const span = { start: Date.UTC(2026, 6, 9), end: Date.UTC(2026, 6, 16) };
+    assert.equal(bucketAxisLabel(span, 'week'), '9 Jul');
+    assert.equal(bucketAxisLabel(span, 'quarter'), 'Jul 26');
   });
 });

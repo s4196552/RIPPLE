@@ -3,32 +3,37 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { relativeTime } from '@/lib/time';
+import { relativeTime, spokenTime } from '@/lib/time';
 import {
   holdingSummary,
   qualityLabel,
-  qualityTone,
+  toFilingRows,
   toTradeRows,
   topAssets,
   type AssetHolding,
   type TradeRow,
 } from '@/lib/trades';
 import { logoUrl } from '@/providers/logos';
-import { describe } from '@/providers/registry';
+import type { Signal } from '@/providers/types';
 import { useFeed, visibleSignals } from '@/store/feed';
 import { useWatchlist } from '@/store/watchlist';
 import { Avatar } from '@/ui/components/Avatar';
 import { EmptyState } from '@/ui/components/EmptyState';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import { radius, space, tapSlop, tint, type } from '@/ui/theme';
-import { markedLabel, toneColor, type Tone } from '@/ui/tone';
+import { font, radius, space, tapSlop, type } from '@/ui/theme';
+import { type Tone } from '@/ui/tone';
+import { TonePill } from '@/ui/components/TonePill';
 
 /**
  * Disclosed transactions as a table, plus what the watched group traded most.
  *
  * Reads the same store as the feed — no fetching of its own. Only signals that
- * carry a structured `trade` appear; an executive order has no trader, action
- * or asset, and a row of dashes is worse than an absent row.
+ * carry a structured `trade` reach the table; an executive order has no trader,
+ * action or asset, and a row of dashes is worse than an absent row.
+ *
+ * Congressional reports without line items get their own list below the table
+ * instead (see `toFilingRows`): they are trade disclosures, just ones whose
+ * details live in the PDF.
  */
 export default function TradesScreen() {
   const c = useTheme();
@@ -40,10 +45,12 @@ export default function TradesScreen() {
   const hidden = useWatchlist((s) => s.hiddenSources);
   const hydrated = useWatchlist((s) => s.hydrated);
 
-  const rows = useMemo(
-    () => toTradeRows(visibleSignals(signals, hidden, subjects)),
+  const visible = useMemo(
+    () => visibleSignals(signals, hidden, subjects),
     [signals, hidden, subjects],
   );
+  const rows = useMemo(() => toTradeRows(visible), [visible]);
+  const filings = useMemo(() => toFilingRows(visible), [visible]);
   const holdings = useMemo(() => topAssets(rows), [rows]);
 
   const open = useCallback(async (url: string) => {
@@ -56,7 +63,7 @@ export default function TradesScreen() {
 
   if (!hydrated) return <View style={styles.screen} />;
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && filings.length === 0) {
     return (
       <View style={styles.screen}>
         <EmptyState
@@ -65,10 +72,10 @@ export default function TradesScreen() {
           body={
             subjects.length === 0
               ? 'Follow a member of Congress or a company, and their disclosed transactions will be tabled here.'
-              : 'Nothing you follow has a disclosed transaction with a ticker yet. Congressional trades need an aggregator key; SEC Form 4 filings work without one.'
+              : 'Nothing you follow has disclosed a transaction yet. Follow a member of Congress, a party, or a company to see their trades here.'
           }
           {...(subjects.length === 0
-            ? { action: { label: 'Add a subject', onPress: () => router.push('/add') } }
+            ? { action: { label: 'Add a subject', icon: 'add', onPress: () => router.push('/add') } }
             : {})}
         />
       </View>
@@ -77,23 +84,50 @@ export default function TradesScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.sectionTitle}>Trades</Text>
-      <Text style={styles.sectionNote}>Stocks &amp; crypto · {rows.length} disclosed</Text>
+      {rows.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Trades</Text>
+          <Text style={styles.sectionNote}>Stocks &amp; crypto · {rows.length} disclosed</Text>
 
-      {rows.map((row) => (
-        <TradeCard key={row.signal.id} row={row} onOpen={open} />
-      ))}
+          {rows.map((row) => (
+            <TradeCard
+              key={row.signal.id}
+              row={row}
+              onOpen={(signal) => router.push({ pathname: '/filing/[id]', params: { id: signal.id } })}
+            />
+          ))}
+        </>
+      )}
 
-      <Text style={styles.sectionTitle}>Top holdings</Text>
-      <Text style={styles.sectionNote}>
-        Stocks &amp; crypto, ranked by how many different people disclosed trading them. These are
-        disclosed transactions, not current positions — an asset bought and later sold still
-        appears.
-      </Text>
+      {filings.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Congress trade reports</Text>
+          <Text style={styles.sectionNote}>
+            {filings.length} filed with the House Clerk with no stock trades to list here — bond
+            and fund purchases, scanned paper forms, or reports filed since the data was last
+            updated. The details are in the report itself. Tap one to read it.
+          </Text>
 
-      {holdings.map((holding, i) => (
-        <HoldingRow key={holding.ticker} holding={holding} rank={i + 1} />
-      ))}
+          {filings.map((filing) => (
+            <FilingCard key={filing.id} filing={filing} onOpen={open} />
+          ))}
+        </>
+      )}
+
+      {holdings.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Top holdings</Text>
+          <Text style={styles.sectionNote}>
+            Stocks &amp; crypto, ranked by how many different people disclosed trading them. These
+            are disclosed transactions, not current positions — an asset bought and later sold still
+            appears.
+          </Text>
+
+          {holdings.map((holding, i) => (
+            <HoldingRow key={holding.ticker} holding={holding} rank={i + 1} />
+          ))}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -105,27 +139,25 @@ export default function TradesScreen() {
  * two lines that keep the same reading order — trader and action up top, asset
  * and the numbers beneath.
  */
-function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (url: string) => void }) {
+/** Opens the in-app filing view, which links on to the original. */
+function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (signal: Signal) => void }) {
   const c = useTheme();
   const styles = useStyles();
-  const meta = describe(row.source);
   const { trade } = row;
   const buy = trade.action === 'buy';
-  const tone = row.quality ? qualityTone(row.quality) : 'neutral';
 
   // Direction of the return itself, which is not the same as `tone` above —
   // that one grades the timing of the decision, this one is just the number.
   const returnTone: Tone = row.changePct === null ? 'neutral' : row.changePct >= 0 ? 'up' : 'down';
 
-  // Two forms: the marked one is drawn, the plain one is spoken. A screen
-  // reader renders `▲` as "black up-pointing triangle", so it never hears it.
+  // Drawn by `TonePill`, which adds the ▲/▼ mark; spoken without it, since a
+  // screen reader renders `▲` as "black up-pointing triangle".
   const returnValue =
     row.changePct === null ? '—' : `${row.changePct >= 0 ? '+' : ''}${row.changePct.toFixed(2)}%`;
-  const returnText = markedLabel(returnTone, returnValue);
 
   return (
     <Pressable
-      onPress={() => onOpen(row.url)}
+      onPress={() => onOpen(row.signal)}
       style={({ pressed }) => [styles.trade, pressed && styles.tradePressed]}
       accessibilityRole="button"
       // The row's meaning is spread across eight columns; the label has to
@@ -150,7 +182,6 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (url: string) => vo
         <Avatar
           uri={trade.traderPhotoUrl}
           name={trade.traderName}
-          accent={meta.color}
           size={34}
         />
 
@@ -168,42 +199,15 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (url: string) => vo
         {/* Only a deliberate trade gets the BUY/SELL colours. A grant or a tax
             withholding is shown by name in neutral tone — calling it BUY would
             read as an insider buying the stock, which is not what happened. */}
-        <View
-          style={[
-            styles.actionChip,
-            {
-              backgroundColor: trade.discretionary
-                ? tint(buy ? c.up : c.down, 0.16)
-                : c.surfaceAlt,
-            },
-          ]}
-        >
-          {trade.discretionary ? (
-            <Ionicons
-              name={buy ? 'arrow-up' : 'arrow-down'}
-              size={11}
-              color={buy ? c.up : c.down}
-            />
-          ) : null}
-          <Text
-            style={[
-              styles.actionText,
-              {
-                color: trade.discretionary
-                  ? buy
-                    ? c.up
-                    : c.down
-                  : c.textMuted,
-              },
-            ]}
-          >
-            {trade.discretionary ? (buy ? 'BUY' : 'SELL') : shortKind(trade.kindLabel)}
-          </Text>
-        </View>
+        {trade.discretionary ? (
+          <TonePill tone={buy ? 'up' : 'down'} label={buy ? 'Buy' : 'Sell'} variant="tag" />
+        ) : (
+          <TonePill tone="neutral" label={shortKind(trade.kindLabel)} variant="tag" />
+        )}
       </View>
 
       <View style={styles.tradeBottom}>
-        <Avatar uri={logoUrl(row.ticker)} name={row.ticker} accent={meta.color} size={26} square logo />
+        <Avatar uri={logoUrl(row.ticker)} name={row.ticker} size={26} square logo />
 
         <View style={styles.assetBlock}>
           <Text style={styles.assetName} numberOfLines={1}>
@@ -216,21 +220,14 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (url: string) => vo
         </View>
 
         <View style={styles.numbers}>
-          <Text
-            style={[
-              styles.returnText,
-              { color: toneColor(returnTone, c) },
-            ]}
-          >
-            {returnText}
-          </Text>
+          {/* A solid pill rather than text in the tone colour: the tones are
+              shared by every mode and only carry small text at AA as a fill. */}
+          <TonePill tone={returnTone} label={returnValue} />
           {/* Three distinct states, and they must not be conflated: a verdict,
               no prices to draw one from, and nothing to judge because the
               movement was not a decision. */}
           {row.quality ? (
-            <Text style={[styles.qualityText, { color: toneColor(tone, c) }]}>
-              {qualityLabel(row.quality)}
-            </Text>
+            <Text style={styles.qualityText}>{qualityLabel(row.quality)}</Text>
           ) : row.changePct === null ? (
             <Text style={styles.qualityMuted}>No price data</Text>
           ) : (
@@ -238,8 +235,43 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (url: string) => vo
           )}
         </View>
 
-        <Ionicons name="open-outline" size={15} color={c.textMuted} />
+        <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
       </View>
+    </Pressable>
+  );
+}
+
+/** A congressional report whose line items are only in its PDF. */
+function FilingCard({ filing, onOpen }: { filing: Signal; onOpen: (url: string) => void }) {
+  const c = useTheme();
+  const styles = useStyles();
+  const { actor } = filing;
+
+  return (
+    <Pressable
+      onPress={() => onOpen(filing.url)}
+      style={({ pressed }) => [styles.filing, pressed && styles.tradePressed]}
+      accessibilityRole="button"
+      accessibilityLabel={
+        `${actor.displayName}${actor.subtitle ? `, ${actor.subtitle}` : ''}. ` +
+        `Filed a trade report ${spokenTime(filing.timestamp)}. Details are in the report.`
+      }
+      accessibilityHint="Opens the report"
+    >
+      <Avatar uri={actor.avatarUrl} name={actor.displayName} size={34} />
+
+      <View style={styles.traderBlock}>
+        <Text style={styles.traderName} numberOfLines={1}>
+          {actor.displayName}
+        </Text>
+        <Text style={styles.traderTitle} numberOfLines={1}>
+          {[actor.subtitle, relativeTime(filing.timestamp)].filter(Boolean).join(' · ')}
+        </Text>
+      </View>
+
+      <TonePill tone="neutral" label="Report" variant="tag" />
+
+      <Ionicons name="open-outline" size={15} color={c.textMuted} />
     </Pressable>
   );
 }
@@ -307,14 +339,31 @@ const useStyles = makeStyles((c) => ({
     lineHeight: 17,
   },
   trade: {
-    paddingHorizontal: space.lg,
+    marginHorizontal: space.lg,
+    marginBottom: space.sm,
+    paddingHorizontal: 14,
     paddingVertical: space.md,
     gap: space.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    backgroundColor: c.surface,
+  },
+  filing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginHorizontal: space.lg,
+    marginBottom: space.sm,
+    paddingHorizontal: 14,
+    paddingVertical: space.md,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    backgroundColor: c.surface,
   },
   tradePressed: {
-    backgroundColor: c.surface,
+    backgroundColor: c.surfaceAlt,
   },
   tradeTop: {
     flexDirection: 'row',
@@ -333,17 +382,6 @@ const useStyles = makeStyles((c) => ({
     ...type.caption,
     color: c.textMuted,
   },
-  actionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: space.sm,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  actionText: {
-    ...type.micro,
-  },
   tradeBottom: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -361,7 +399,7 @@ const useStyles = makeStyles((c) => ({
   assetType: {
     ...type.caption,
     color: c.textMuted,
-    fontWeight: '400',
+    fontFamily: font.regular,
   },
   assetMeta: {
     ...type.caption,
@@ -371,11 +409,9 @@ const useStyles = makeStyles((c) => ({
     alignItems: 'flex-end',
     gap: 1,
   },
-  returnText: {
-    ...type.label,
-  },
   qualityText: {
     ...type.micro,
+    color: c.text,
   },
   qualityMuted: {
     ...type.caption,
@@ -386,10 +422,14 @@ const useStyles = makeStyles((c) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    paddingHorizontal: space.lg,
+    marginHorizontal: space.lg,
+    marginBottom: space.sm,
+    paddingHorizontal: 14,
     paddingVertical: space.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    backgroundColor: c.surface,
   },
   rank: {
     ...type.caption,

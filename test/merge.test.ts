@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   MAX_SIGNALS,
   countBySource,
+  liftExpiredMutes,
   mergeSignals,
   pruneUnwatched,
   subjectKey,
@@ -100,6 +101,14 @@ describe('mergeSignals', () => {
     const existing = [signal('a', 100), signal('b', 200)];
     assert.deepEqual(mergeSignals(existing, []).map((s) => s.id), ['b', 'a']);
   });
+  it('drops a card that an incoming one supersedes', () => {
+    // A filing's "report exists" card, then the trades read from its PDF.
+    const filing = signal('congress:2002', 100);
+    const trade = signal('congress:2002-0', 100, 'congress', 'nancy-pelosi-ca11', {
+      supersedes: ['congress:2002'],
+    });
+    assert.deepEqual(mergeSignals([filing], [trade]).map((s) => s.id), ['congress:2002-0']);
+  });
 });
 
 describe('pruneUnwatched', () => {
@@ -184,5 +193,27 @@ describe('countBySource', () => {
 
   it('returns an empty tally for no signals', () => {
     assert.deepEqual(countBySource([]), {});
+  });
+});
+
+describe('liftExpiredMutes', () => {
+  const base: WatchedSubject = {
+    source: 'congress',
+    handle: 'nancy-pelosi-ca11',
+    displayName: 'Nancy Pelosi',
+    addedAt: 0,
+    muted: true,
+  };
+
+  it('unmutes a timed mute once its time has passed', () => {
+    const lifted = liftExpiredMutes([{ ...base, mutedUntil: 1_000 }], 2_000);
+    assert.equal(lifted?.[0]?.muted, false);
+    assert.equal(lifted?.[0]?.mutedUntil, null);
+  });
+
+  it('leaves a mute that has not run out, and one with no end', () => {
+    assert.equal(liftExpiredMutes([{ ...base, mutedUntil: 5_000 }], 2_000), null);
+    assert.equal(liftExpiredMutes([{ ...base, mutedUntil: null }], 2_000), null);
+    assert.equal(liftExpiredMutes([base], 2_000), null);
   });
 });

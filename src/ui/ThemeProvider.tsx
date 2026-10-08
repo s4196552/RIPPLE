@@ -30,10 +30,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // device live rather than only at launch.
   const system = useColorScheme();
 
+  // 'system' follows the device between Dark blue and White; True black is
+  // only ever an explicit choice.
   const name: ThemeName =
     preference === 'system' ? (system === 'light' ? 'light' : 'dark') : preference;
 
-  // Two independent axes — light/dark, and which pair of colours means up and
+  // Two independent axes — the mode, and which pair of colours means up and
   // down — so the palette is looked up by both rather than by theme alone.
   const palette = paletteFor(name, tones);
 
@@ -79,9 +81,9 @@ type NamedStyles<T> = { [P in keyof T]: ViewStyle | TextStyle | ImageStyle };
  *   // ...then inside the component:
  *   const styles = useStyles();
  *
- * The cache is keyed on the palette object identity. There are exactly two of
- * those and they are module constants, so it holds at most two entries per
- * call site and never grows.
+ * The cache is keyed on the palette object identity. There are six of those
+ * (three modes × two tone pairs) and they are module constants, so the cache
+ * holds at most six entries per call site and never grows.
  */
 export function makeStyles<T extends NamedStyles<T> | NamedStyles<any>>(
   factory: (palette: Palette) => T & NamedStyles<any>,

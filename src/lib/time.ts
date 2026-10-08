@@ -13,10 +13,15 @@ export function relativeTime(timestamp: number, now: number = Date.now()): strin
   if (delta < DAY) return `${Math.floor(delta / HOUR)}h`;
   if (delta < 7 * DAY) return `${Math.floor(delta / DAY)}d`;
 
+  // UTC, to agree with the feed's day headers (`dayStartOf` in digest.ts). In
+  // local time a card east of UTC printed "Sep 25" under a "Thu 24 Sep" header,
+  // and a date-only filing west of UTC printed the day before it was published.
   const date = new Date(timestamp);
-  const month = date.toLocaleString('en-US', { month: 'short' });
-  const sameYear = date.getFullYear() === new Date(now).getFullYear();
-  return sameYear ? `${month} ${date.getDate()}` : `${month} ${date.getDate()}, ${date.getFullYear()}`;
+  const month = date.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+  const sameYear = date.getUTCFullYear() === new Date(now).getUTCFullYear();
+  return sameYear
+    ? `${month} ${date.getUTCDate()}`
+    : `${month} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
 }
 
 /** Full timestamp for the account-detail header and accessibility labels. */

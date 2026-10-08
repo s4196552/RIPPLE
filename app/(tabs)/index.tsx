@@ -27,7 +27,7 @@ import { StarterNotice } from '@/ui/components/StarterNotice';
 import { FilterChips } from '@/ui/components/FilterChips';
 import { SignalCard } from '@/ui/components/SignalCard';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import { radius, shadow, space, type } from '@/ui/theme';
+import { font, radius, shadow, space, tint, type } from '@/ui/theme';
 
 /** One day of the feed, in the shape `SectionList` wants. */
 interface DigestSection {
@@ -60,7 +60,7 @@ export default function FeedScreen() {
 
   const subjects = useWatchlist((s) => s.subjects);
   const hidden = useWatchlist((s) => s.hiddenSources);
-  const toggleSource = useWatchlist((s) => s.toggleSource);
+  const setHiddenSources = useWatchlist((s) => s.setHiddenSources);
   // Waits for the persisted feed as well, so a relaunch never flashes "nothing
   // to show" in the moment before the stored signals arrive.
   const hydrated = useWatchlist((s) => s.hydrated) && useFeed((s) => s.hydrated);
@@ -144,9 +144,20 @@ export default function FeedScreen() {
 
   return (
     <View style={styles.container}>
+      {lastUpdated || subjects.length > 0 ? (
+        <Text style={styles.meta} accessibilityLiveRegion="polite">
+          {[
+            lastUpdated ? `Updated ${relativeTime(lastUpdated)} ago` : null,
+            starter ? null : `${subjects.length} follow${subjects.length === 1 ? '' : 's'}`,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </Text>
+      ) : null}
+
       {starter && <StarterNotice onPress={() => router.push('/add')} />}
 
-      <FilterChips hidden={hidden} onToggle={toggleSource} counts={counts} />
+      <FilterChips hidden={hidden} onChange={setHiddenSources} counts={counts} />
 
       {showErrors && (
         <Pressable
@@ -191,8 +202,6 @@ export default function FeedScreen() {
             renderSectionHeader={({ section }) => <DigestHeader day={section.day} />}
             // A sticky header would cover the card it belongs to on a short day.
             stickySectionHeadersEnabled={false}
-            // Clears the floating action button, which otherwise sat on top of
-            // the last card with no way to scroll past it.
             contentContainerStyle={styles.listContent}
             refreshControl={
               <RefreshControl
@@ -212,15 +221,10 @@ export default function FeedScreen() {
                 title="Nothing to show"
                 body={
                   hidden.length > 0
-                    ? 'Every source is filtered out. Tap a chip above to bring one back.'
+                    ? 'Nothing from this source yet. Tap All to see everything.'
                     : 'No signals yet from the subjects you follow. Pull down to refresh.'
                 }
               />
-            }
-            ListFooterComponent={
-              shown.length > 0 && lastUpdated ? (
-                <Text style={styles.footer}>Updated {relativeTime(lastUpdated)} ago</Text>
-              ) : null
             }
             initialNumToRender={10}
             maxToRenderPerBatch={8}
@@ -244,30 +248,6 @@ export default function FeedScreen() {
           </Pressable>
         )}
 
-        {/*
-          Navigates with `router.push` rather than `<Link asChild>`, which
-          silently deleted every style on this button.
-
-          `asChild` renders through Radix's `Slot`, and Slot merges `style` by
-          object spread: `{ ...slotProps.style, ...childProps.style }`. A
-          Pressable's style is allowed to be a *function* of press state, and
-          spreading a function yields `{}` — functions have no own enumerable
-          properties. So the FAB rendered with no position, no size and no
-          background, and its `onAccent` glyph is near-black on a near-black
-          page: the primary "add a subject" control was invisible, present only
-          as a full-width invisible strip above the tab bar. Slot's dev-time
-          guard only catches an *array* style, so nothing warned.
-
-          Every other navigation in this app already uses `router.push`.
-        */}
-        <Pressable
-          onPress={() => router.push('/add')}
-          style={({ pressed }) => [styles.fab, pressed && styles.pressedLift]}
-          accessibilityRole="button"
-          accessibilityLabel="Add a subject to your watchlist"
-        >
-          <Ionicons name="add" size={26} color={c.onAccent} />
-        </Pressable>
       </View>
     </View>
   );
@@ -299,8 +279,11 @@ function DigestHeader({ day }: { day: DigestDay }) {
             <Text style={styles.headlineText}>{headline}</Text>
           </View>
         ) : null}
+        <View style={styles.daySpacer} />
+        <Text style={styles.daySummary} numberOfLines={1}>
+          {summary}
+        </Text>
       </View>
-      <Text style={styles.daySummary}>{summary}</Text>
     </View>
   );
 }
@@ -310,11 +293,19 @@ const useStyles = makeStyles((c) => ({
     flex: 1,
     backgroundColor: c.bg,
   },
-  dayHeader: {
+  meta: {
+    ...type.label,
+    fontFamily: font.regular,
+    color: c.textSubtle,
     paddingHorizontal: space.lg,
-    paddingTop: space.xl,
+  },
+  // One line, as in the design: the day in ink caps on the left, the counts
+  // quieter on the right. Cards carry their own surface, so no rule is needed
+  // to separate the days.
+  dayHeader: {
+    paddingHorizontal: space.lg + 2,
+    paddingTop: space.lg,
     paddingBottom: space.sm,
-    gap: 2,
     backgroundColor: c.bg,
   },
   dayHeaderRow: {
@@ -323,23 +314,30 @@ const useStyles = makeStyles((c) => ({
     gap: space.sm,
   },
   dayLabel: {
-    ...type.heading,
+    ...type.eyebrow,
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: font.bold,
+    textTransform: 'uppercase',
     color: c.text,
+  },
+  daySpacer: {
+    flex: 1,
   },
   daySummary: {
     ...type.caption,
-    color: c.textMuted,
+    fontFamily: font.medium,
+    color: c.textSubtle,
+    flexShrink: 1,
   },
   headlinePill: {
-    paddingHorizontal: space.sm,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: radius.sm,
+    borderRadius: 4,
     backgroundColor: c.surfaceAlt,
   },
   headlineText: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    ...type.tag,
     color: c.textMuted,
     textTransform: 'uppercase',
   },
@@ -347,8 +345,7 @@ const useStyles = makeStyles((c) => ({
     flex: 1,
   },
   listContent: {
-    // 56pt button + its 24pt inset + breathing room, so the last card clears it.
-    paddingBottom: 56 + space.xl + space.lg,
+    paddingBottom: space.xl,
   },
   centered: {
     flex: 1,
@@ -366,7 +363,9 @@ const useStyles = makeStyles((c) => ({
     gap: space.sm,
     paddingHorizontal: space.lg,
     paddingVertical: space.md,
-    backgroundColor: 'rgba(232, 178, 58, 0.10)',
+    // From the palette, so it follows the theme — this was the dark warning
+    // hardcoded, and stayed a dark-mode amber on the light page.
+    backgroundColor: tint(c.warning, 0.1),
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: c.border,
   },
@@ -374,12 +373,6 @@ const useStyles = makeStyles((c) => ({
     ...type.caption,
     color: c.textMuted,
     flex: 1,
-  },
-  footer: {
-    ...type.caption,
-    color: c.textMuted,
-    textAlign: 'center',
-    paddingVertical: space.xl,
   },
   newPill: {
     position: 'absolute',
@@ -397,18 +390,6 @@ const useStyles = makeStyles((c) => ({
   newPillText: {
     ...type.micro,
     color: c.onAccent,
-  },
-  fab: {
-    position: 'absolute',
-    right: space.lg,
-    bottom: space.xl,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: c.accent,
-    ...shadow.floating,
   },
   // One press treatment for every raised control, so they don't each drift.
   pressedLift: {

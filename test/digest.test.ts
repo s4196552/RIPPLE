@@ -117,12 +117,12 @@ describe('daySummary', () => {
       signal('c', TODAY, 'insider'),
     ]);
 
-    assert.equal(daySummary(day!, labelFor), '3 filings · 2 policy, 1 insiders');
+    assert.equal(daySummary(day!, labelFor), '3 filings · Policy 2, Insiders 1');
   });
 
   it('singularises a lone filing', () => {
     const [day] = groupByDay([signal('a', TODAY, 'policy')]);
-    assert.equal(daySummary(day!, labelFor), '1 filing · 1 policy');
+    assert.equal(daySummary(day!, labelFor), '1 filing · Policy');
   });
 });
 

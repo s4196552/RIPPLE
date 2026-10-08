@@ -56,6 +56,7 @@ export const usePreferences = create<PreferencesState>()(
         startTab: state.startTab,
         linkTarget: state.linkTarget,
         dailyDigest: state.dailyDigest,
+        onboarded: state.onboarded,
       }),
       /**
        * A stored value that is no longer valid — a preference removed in a

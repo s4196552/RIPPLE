@@ -76,6 +76,13 @@ export interface Signal {
   badges?: string[];
 
   /**
+   * Ids of earlier cards this one replaces — a congressional filing's "a
+   * report exists" card, once its PDF has been read into trade cards with ids
+   * of their own. The merge drops these, so the feed never shows both.
+   */
+  supersedes?: string[];
+
+  /**
    * Structured facts about the transaction, when this signal is one.
    *
    * Carried separately from `text` because a table needs the fields, not a
@@ -124,6 +131,14 @@ export interface TradeDetail {
   assetName?: string | null;
   /** Disclosed size, pre-formatted: `$1,001 - $15,000`, `500K shares`. */
   amountLabel?: string | null;
+  /**
+   * When the trade itself happened, epoch ms UTC, where the source says.
+   *
+   * The signal's `timestamp` is the disclosure — the news event — so the gap
+   * between the two is how long the public waited, which the member page and
+   * the filing view both report.
+   */
+  tradedAt?: number | null;
 }
 
 export interface SignalReaction {
@@ -163,7 +178,11 @@ export interface SourceDescriptor {
   sigil: string;
   /** Hex accent used for the card badge, chip and picker tile. */
   color: string;
-  /** Ionicons glyph for the picker tile and card badge. */
+  /**
+   * Icon for the picker tile, feed chip and card badge: a bare Ionicons name,
+   * or another set's glyph prefixed with its family — `'fa6:landmark-dome'`.
+   * See `parseGlyph`.
+   */
   icon: string;
   /** One-line explanation shown under the tile in the source picker. */
   blurb: string;
@@ -190,6 +209,15 @@ export interface Provider<Raw = unknown> extends SourceDescriptor {
 
   /** Raw payload -> the shared shape. Pure and synchronous; unit-tested directly. */
   normalizeSignal(raw: Raw, actor: Actor): Signal;
+
+  /**
+   * The individual subjects inside a group subject, most recently active first.
+   *
+   * Optional, and only meaningful for handles that stand for several people —
+   * a party, say. Resolves `null` for a handle that is not a group, so callers
+   * can tell "not a group" from "a group with nobody in it yet".
+   */
+  groupMembers?(handle: string, signal?: AbortSignal): Promise<SubjectResult[] | null>;
 
   /** Whether this provider currently has what it needs to return real data. */
   mode(): ProviderMode;

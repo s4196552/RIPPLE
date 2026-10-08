@@ -240,7 +240,7 @@ export const InsiderProvider: Provider<Form4> = {
   label: 'Insiders',
   sigil: '$',
   color: '#F59E0B',
-  icon: 'briefcase',
+  icon: 'fa6:user-tie',
   blurb: 'Form 4 filings — executives and directors trading their own stock',
   subjectNoun: 'a company',
   provenance: 'SEC EDGAR, no key required',

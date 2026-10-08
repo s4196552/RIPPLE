@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { getProvider } from '@/providers/registry';
 import type { Signal, SourceId } from '@/providers/types';
 import { isAbort } from '@/lib/http';
+import { derivedTickerSubjects, viaBadge, type DerivedSubject } from './derived';
 import { mergeSignals, pruneUnwatched, subjectKey } from './merge';
 import type { WatchedSubject } from './watchlist';
 
@@ -110,18 +111,21 @@ export const useFeed = create<FeedState>()(
           }
         }
 
-        const results = await Promise.allSettled(
-          subjects.map((subject) =>
-            getProvider(subject.source).getSignals(subject.handle, {
-              limit: SIGNALS_PER_SUBJECT,
-              since:
-                mode === 'poll'
-                  ? newestBySubject.get(subjectKey(subject.source, subject.handle))
-                  : undefined,
-              signal: controller.signal,
-            }),
-          ),
-        );
+        const fetchAll = (list: readonly WatchedSubject[]) =>
+          Promise.allSettled(
+            list.map((subject) =>
+              getProvider(subject.source).getSignals(subject.handle, {
+                limit: SIGNALS_PER_SUBJECT,
+                since:
+                  mode === 'poll'
+                    ? newestBySubject.get(subjectKey(subject.source, subject.handle))
+                    : undefined,
+                signal: controller.signal,
+              }),
+            ),
+          );
+
+        const results = await fetchAll(subjects);
 
         if (controller.signal.aborted) return;
 
@@ -142,20 +146,58 @@ export const useFeed = create<FeedState>()(
           }
         });
 
-        const previousIds = new Set(get().signals.map((s) => s.id));
-        const merged = pruneUnwatched(mergeSignals(get().signals, incoming), subjects);
-        const freshCount = merged.reduce((n, s) => (previousIds.has(s.id) ? n : n + 1), 0);
+        // The tickers a followed party traded, fetched in Insiders and Stocks.
+        // Worked out now, from the Congress cards just returned, so the first
+        // commit already knows which derived cards to keep. See `./derived.ts`.
+        const watchedKeys = new Set(subjects.map((s) => subjectKey(s.source, s.handle)));
+        const derived = derivedTickerSubjects(subjects, [...get().signals, ...incoming], (source, handle) =>
+          watchedKeys.has(subjectKey(source, handle)),
+        );
+        const kept = [...subjects, ...derived];
+
+        // First commit: what the user chose, without waiting on the derived
+        // fetches — those are several SEC requests per ticker.
+        const firstIds = new Set(get().signals.map((s) => s.id));
+        const first = pruneUnwatched(mergeSignals(get().signals, incoming), kept);
+        const firstFresh = first.reduce((n, s) => (firstIds.has(s.id) ? n : n + 1), 0);
 
         set((state) => ({
-          signals: merged,
+          signals: first,
           loading: false,
           refreshing: false,
           lastUpdated: Date.now(),
           errors,
           // Only polling produces the "N new" pill; an explicit refresh means the
           // user is already looking at the top of the list.
-          newSincePeek: mode === 'poll' ? state.newSincePeek + freshCount : 0,
+          newSincePeek: mode === 'poll' ? state.newSincePeek + firstFresh : 0,
         }));
+
+        if (derived.length > 0) {
+          const derivedResults = await fetchAll(derived);
+          if (controller.signal.aborted) return;
+
+          const extra: Signal[] = [];
+          derivedResults.forEach((result, i) => {
+            // A ticker nobody chose failing to load is not worth a banner; the
+            // party's own cards, which the user did choose, are already in.
+            if (result.status !== 'fulfilled') return;
+            const badge = viaBadge((derived[i] as DerivedSubject).via);
+            for (const s of result.value) {
+              s.badges = [badge, ...(s.badges ?? []).filter((b) => !b.startsWith('VIA '))];
+              extra.push(s);
+            }
+          });
+
+          if (extra.length > 0) {
+            const secondIds = new Set(get().signals.map((s) => s.id));
+            const second = pruneUnwatched(mergeSignals(get().signals, extra), kept);
+            const secondFresh = second.reduce((n, s) => (secondIds.has(s.id) ? n : n + 1), 0);
+            set((state) => ({
+              signals: second,
+              newSincePeek: mode === 'poll' ? state.newSincePeek + secondFresh : state.newSincePeek,
+            }));
+          }
+        }
 
         if (inFlight === controller) inFlight = null;
       },
@@ -178,6 +220,12 @@ export const useFeed = create<FeedState>()(
     {
       name: 'ripple-feed-v1',
       storage: createJSONStorage(() => AsyncStorage),
+      // v2 discards every feed saved before price lookups stopped falling back
+      // to an invented series. Those caches can hold made-up price moves and
+      // reaction badges with nothing marking them, and a refresh only replaces
+      // cards whose ids it reproduces. One cold refetch is the cheap side.
+      version: 2,
+      migrate: () => ({ signals: [], lastUpdated: null }),
       // Only what is worth seeing again on launch. See the note above.
       partialize: (state) => ({
         signals: state.signals.slice(0, PERSISTED_SIGNALS),

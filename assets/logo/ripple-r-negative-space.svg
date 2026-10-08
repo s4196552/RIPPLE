@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 256 256" role="img" aria-labelledby="ripple-title ripple-desc">
+  <title id="ripple-title">Ripple — negative-space R</title>
+  <desc id="ripple-desc">A circular teal, blue and violet gradient with two transparent ripple rings and a custom R cut through its center. The letter and the surrounding background are transparent.</desc>
+  <defs>
+    <linearGradient id="ripple-hue" gradientUnits="userSpaceOnUse" x1="36" y1="28" x2="222" y2="228">
+      <stop offset="0" stop-color="#20CDBD"/>
+      <stop offset="0.48" stop-color="#3478EC"/>
+      <stop offset="1" stop-color="#8752E5"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#ripple-hue)" fill-rule="evenodd" d="
+    M128 16 A112 112 0 1 1 128 240 A112 112 0 1 1 128 16 Z
+    M128 26 A102 102 0 1 1 128 230 A102 102 0 1 1 128 26 Z
+    M128 29 A99 99 0 1 1 128 227 A99 99 0 1 1 128 29 Z
+    M128 36 A92 92 0 1 1 128 220 A92 92 0 1 1 128 36 Z
+    M128 39 A89 89 0 1 1 128 217 A89 89 0 1 1 128 39 Z
+    M84 64 H132
+    C162 64 180 79 180 105
+    C180 124 170 137 155 143
+    L183 184 Q188 192 178 192
+    H162 Q157 192 153 186
+    L124 144 H109 V182
+    Q109 192 99 192 H94
+    Q84 192 84 182 Z
+    M109 88 V120 H130
+    C146 120 154 115 154 104
+    C154 93 146 88 130 88 Z
+  "/>
+</svg>

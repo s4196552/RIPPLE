@@ -21,6 +21,10 @@ describe('default preferences', () => {
   it('opens on the feed', () => {
     assert.equal(DEFAULT_PREFERENCES.startTab, 'index');
   });
+
+  it('defaults to the teal/orange tones of the redesign', () => {
+    assert.equal(DEFAULT_PREFERENCES.tones, 'accessible');
+  });
 });
 
 describe('pollIntervalMs', () => {
@@ -48,8 +52,17 @@ describe('sanitize', () => {
       startTab: 'trades',
       linkTarget: 'system',
       dailyDigest: false,
+      onboarded: true,
     };
     assert.deepEqual(sanitize(stored), stored);
+  });
+
+  it('shows the introduction to an install that predates it', () => {
+    // Stored preferences from before onboarding existed carry no flag; the
+    // default (not yet seen) must apply, not a stray non-boolean.
+    assert.equal(sanitize({ theme: 'dark' }).onboarded, undefined);
+    assert.equal(sanitize({ onboarded: 'yes' }).onboarded, undefined);
+    assert.equal(DEFAULT_PREFERENCES.onboarded, false);
   });
 
   it('drops a value this version no longer recognises', () => {
@@ -64,6 +77,7 @@ describe('sanitize', () => {
 
   it('keeps the good keys from a partly invalid blob', () => {
     // One bad value must not discard the whole file.
+    assert.equal(sanitize({ theme: 'black' }).theme, 'black', 'True black is a stored mode');
     const cleaned = sanitize({ theme: 'dark', refreshInterval: 'sometimes' });
     assert.equal(cleaned.theme, 'dark');
     assert.equal(cleaned.refreshInterval, undefined);

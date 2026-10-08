@@ -101,6 +101,20 @@ export interface TradeRow {
 }
 
 /**
+ * Congressional trade reports that carry no line items.
+ *
+ * The keyless House Clerk index says a member filed a periodic transaction
+ * report, not what it contains — ticker, amount and direction exist only in the
+ * PDF. `toTradeRows` rightly skips these, since a table row of dashes says
+ * nothing; but skipping them outright left a party follower's Trades tab empty
+ * while their feed was full of disclosures. They are listed on their own, for
+ * what they are: a filing, with a link to read it.
+ */
+export function toFilingRows(signals: readonly Signal[]): Signal[] {
+  return signals.filter((s) => s.source === 'congress' && !(s.trade && s.ticker));
+}
+
+/**
  * Signals that are actually trades, newest first.
  *
  * A signal without a `trade` (an executive order, a price move, a bare

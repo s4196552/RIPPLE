@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { makeStyles, useTheme } from '../ThemeProvider';
-import { radius, space, tint, type } from '../theme';
+import { radius, space, type } from '../theme';
 
 interface Props {
   /** Where "make it yours" goes — the add flow. */
@@ -33,18 +33,19 @@ export function StarterNotice({ onPress }: Props) {
       // says what happens if you press it.
       accessibilityLabel="Starter feed. These are sample subjects from each public source, not a watchlist of your own. Double tap to follow your first subject."
     >
-      <View style={styles.iconRing}>
-        <Ionicons name="sparkles-outline" size={15} color={c.accent} />
-      </View>
-
       <View style={styles.copy}>
-        <Text style={styles.title}>Starter feed</Text>
+        <Text style={styles.title}>You're seeing a starter feed</Text>
         <Text style={styles.body} numberOfLines={2}>
-          A sample from each source. Follow anything to make this yours.
+          A sample from each source. Follow someone to make it yours.
         </Text>
       </View>
 
-      <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
+      {/* Says what the press does instead of a bare chevron. Part of the one
+          Pressable, not a second button inside it. */}
+      <View style={styles.cta}>
+        <Ionicons name="add" size={15} color={c.accent} />
+        <Text style={styles.ctaText}>Follow</Text>
+      </View>
     </Pressable>
   );
 }
@@ -54,26 +55,22 @@ const useStyles = makeStyles((c) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    paddingHorizontal: space.lg,
+    marginHorizontal: space.lg,
+    marginTop: space.sm,
+    paddingLeft: space.lg,
+    paddingRight: space.md,
     paddingVertical: space.md,
-    backgroundColor: tint(c.accent, 0.09),
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: tint(c.accent, 0.3),
+    borderRadius: radius.lg,
+    backgroundColor: c.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
   },
   pressed: {
-    backgroundColor: tint(c.accent, 0.16),
-  },
-  iconRing: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: tint(c.accent, 0.16),
+    backgroundColor: c.surfaceAlt,
   },
   copy: {
     flex: 1,
-    gap: 1,
+    gap: 2,
   },
   title: {
     ...type.label,
@@ -81,7 +78,24 @@ const useStyles = makeStyles((c) => ({
   },
   body: {
     ...type.caption,
+    // `textMuted`, not `textSubtle`: this sits on `surface`, where subtle
+    // drops below AA in dark.
     color: c.textMuted,
     lineHeight: 16,
+  },
+  cta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: space.sm,
+    paddingVertical: 6,
+    // Secondary: the header's Follow is the primary one on this screen.
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: c.borderStrong,
+  },
+  ctaText: {
+    ...type.label,
+    color: c.text,
   },
 }));

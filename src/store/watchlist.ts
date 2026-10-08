@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { SourceId, SubjectResult } from '@/providers/types';
-import { subjectKey } from './merge';
+import { liftExpiredMutes, subjectKey } from './merge';
 
 export { subjectKey };
 
@@ -25,6 +25,12 @@ export interface WatchedSubject {
   addedAt: number;
   /** Muted subjects stay on the watchlist but are excluded from fetching. */
   muted: boolean;
+  /**
+   * When a timed mute lifts, epoch ms. Absent or null while muted means
+   * "until I unmute". Lifted by `expireMutes`, which runs at launch and on each
+   * feed poll.
+   */
+  mutedUntil?: number | null;
 }
 
 interface WatchlistState {
@@ -39,7 +45,12 @@ interface WatchlistState {
   restore: (incoming: readonly BackupSubject[]) => number;
   remove: (source: SourceId, handle: string) => void;
   toggleMute: (source: SourceId, handle: string) => void;
-  toggleSource: (source: SourceId) => void;
+  /** Mute until a time, mute until unmuted (`null`), or unmute (`false`). */
+  setMute: (source: SourceId, handle: string, until: number | null | false) => void;
+  /** Lift every timed mute whose time has passed. */
+  expireMutes: (now?: number) => void;
+  /** Replace the hidden set. The feed's chips use it to show one source or all. */
+  setHiddenSources: (sources: SourceId[]) => void;
   isWatched: (source: SourceId, handle: string) => boolean;
   setHydrated: () => void;
 }
@@ -91,7 +102,13 @@ export const useWatchlist = create<WatchlistState>()(
               // a backup would outlive the endpoint that served it.
               avatarUrl: null,
               addedAt: now,
-              muted: entry.muted === true,
+              // A timed mute that ran out while the backup sat in a note is
+              // simply over.
+              muted: entry.muted === true && !(entry.mutedUntil != null && entry.mutedUntil <= now),
+              mutedUntil:
+                entry.muted === true && entry.mutedUntil != null && entry.mutedUntil > now
+                  ? entry.mutedUntil
+                  : null,
             });
           }
 
@@ -112,17 +129,26 @@ export const useWatchlist = create<WatchlistState>()(
         set((state) => ({
           subjects: state.subjects.map((s) =>
             subjectKey(s.source, s.handle) === subjectKey(source, handle)
-              ? { ...s, muted: !s.muted }
+              ? { ...s, muted: !s.muted, mutedUntil: null }
               : s,
           ),
         })),
 
-      toggleSource: (source) =>
+      setMute: (source, handle, until) =>
         set((state) => ({
-          hiddenSources: state.hiddenSources.includes(source)
-            ? state.hiddenSources.filter((s) => s !== source)
-            : [...state.hiddenSources, source],
+          subjects: state.subjects.map((s) =>
+            subjectKey(s.source, s.handle) === subjectKey(source, handle)
+              ? { ...s, muted: until !== false, mutedUntil: until === false ? null : until }
+              : s,
+          ),
         })),
+
+      expireMutes: (now = Date.now()) => {
+        const lifted = liftExpiredMutes(get().subjects, now);
+        if (lifted) set({ subjects: lifted });
+      },
+
+      setHiddenSources: (sources) => set({ hiddenSources: [...sources] }),
 
       isWatched: (source, handle) =>
         get().subjects.some((s) => subjectKey(s.source, s.handle) === subjectKey(source, handle)),
@@ -140,6 +166,7 @@ export const useWatchlist = create<WatchlistState>()(
       // session, not saved data. The feed waits on it so a cold start doesn't
       // flash the empty state before the saved watchlist loads.
       onRehydrateStorage: () => (state) => {
+        state?.expireMutes();
         state?.setHydrated();
       },
     },

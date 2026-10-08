@@ -113,7 +113,7 @@ export const PolicyProvider: Provider<FederalRegisterDocument> = {
   label: 'Policy',
   sigil: '',
   color: '#5B8DEF',
-  icon: 'document-text',
+  icon: 'fa6:scale-balanced',
   blurb: 'Executive orders and proclamations as they are signed',
   subjectNoun: 'a document type or topic',
   provenance: 'Federal Register API, no key required',

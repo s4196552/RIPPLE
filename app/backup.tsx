@@ -19,7 +19,7 @@ import {
 } from '@/lib/backup';
 import { useWatchlist } from '@/store/watchlist';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import { radius, space, toneChip, type } from '@/ui/theme';
+import { radius, space, type } from '@/ui/theme';
 
 /**
  * Back up and restore the watchlist.
@@ -151,9 +151,10 @@ export default function BackupScreen() {
         {/* Announced, because it changes as a consequence of typing and is the
             only thing telling the user whether the paste was any good. */}
         {parsed && !parsed.ok && (
-          <Text style={[styles.status, { color: c.down }]} accessibilityLiveRegion="polite">
-            {parsed.error}
-          </Text>
+          <View style={styles.errorRow} accessibilityLiveRegion="polite">
+            <Ionicons name="alert-circle" size={15} color={c.down} />
+            <Text style={[styles.status, { color: c.text, flex: 1 }]}>{parsed.error}</Text>
+          </View>
         )}
 
         {preview && (
@@ -281,7 +282,7 @@ const useStyles = makeStyles((c) => ({
   },
   buttonText: {
     ...type.label,
-    color: c.accent,
+    color: c.text,
   },
   primaryText: {
     color: c.onAccent,
@@ -295,11 +296,16 @@ const useStyles = makeStyles((c) => ({
     gap: space.sm,
     padding: space.md,
     borderRadius: radius.md,
-    backgroundColor: toneChip(c.up),
+    backgroundColor: c.surfaceAlt,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.sm,
   },
   resultText: {
     ...type.caption,
-    color: c.up,
+    color: c.text,
     flex: 1,
     lineHeight: 17,
   },
