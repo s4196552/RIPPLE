@@ -1,5 +1,6 @@
 import { getJson, getText, isAbort, isAccessDenied } from '@/lib/http';
-import { district, personName } from '@/lib/format';
+import { district, personName, slug } from '@/lib/format';
+import { OPTIONS_BADGE, sameTicker } from '@/lib/ticker';
 import { loadSeries } from '@/providers/stocks/StocksProvider';
 import type { Series } from '@/providers/stocks/events';
 import {
@@ -31,6 +32,8 @@ import type {
   Provider,
   ProviderMode,
   Signal,
+  SocialLink,
+  SubjectProfile,
   SubjectResult,
 } from '@/providers/types';
 import {
@@ -53,14 +56,17 @@ import {
 import {
   CONGRESS_SCOPES,
   buildRoster,
+  buildSocialIndex,
   findByName,
   findLegislator,
+  legislatorProfile,
   parseScope,
   photoUrl,
   scopeIncludes,
   type CongressScope,
   type Legislator,
   type RawLegislator,
+  type RawSocialEntry,
   type Roster,
 } from './roster';
 import bundledTrades from './data/house-trades.json';
@@ -295,6 +301,31 @@ async function loadRoster(signal?: AbortSignal): Promise<Roster> {
     if (isAbort(err)) throw err;
     console.warn('[congress] roster unavailable — no faces or party filters this session:', err);
     return EMPTY_ROSTER;
+  }
+}
+
+/**
+ * The accounts each member's office runs, from the roster's companion file.
+ *
+ * ~140KB, fetched only when a member's own page is opened, and kept for a day
+ * like the roster. A failure costs the links on the profile card, nothing more.
+ */
+let socialCache: { index: Map<string, SocialLink[]>; fetchedAt: number } | null = null;
+const SOCIAL_URL = 'https://unitedstates.github.io/congress-legislators/legislators-social-media.json';
+
+async function loadSocial(signal?: AbortSignal): Promise<Map<string, SocialLink[]>> {
+  const cached = socialCache;
+  if (cached && Date.now() - cached.fetchedAt < ROSTER_TTL_MS) return cached.index;
+
+  try {
+    const raw = await getJson<RawSocialEntry[]>(SOCIAL_URL, { headers: AGENT, signal, timeoutMs: 20_000 });
+    const index = buildSocialIndex(raw);
+    socialCache = { index, fetchedAt: Date.now() };
+    return index;
+  } catch (err) {
+    if (isAbort(err)) throw err;
+    console.warn('[congress] social accounts unavailable — profile shows no links:', err);
+    return new Map();
   }
 }
 
@@ -570,6 +601,23 @@ export const CongressProvider: Provider<FilingRow> = {
       });
   },
 
+  async profile(handle: string, signal?: AbortSignal): Promise<SubjectProfile | null> {
+    // A party or a chamber is many people, with no one set of accounts.
+    if (parseScope(handle).kind !== 'member') return null;
+
+    const [rows, roster, social] = await Promise.all([
+      loadAllRows(signal),
+      loadRoster(signal),
+      loadSocial(signal),
+    ]);
+    const row = rows.find((r) => memberHandle(r) === handle);
+    const legislator = row ? findLegislator(roster, row) : null;
+    // A filer the roster cannot place is no longer serving, or is matched too
+    // loosely to trust — and a wrong member's accounts are worse than none.
+    if (!legislator) return null;
+    return legislatorProfile(legislator, social.get(legislator.bioguide) ?? []);
+  },
+
   async getSignals(handle: string, options: GetSignalsOptions = {}): Promise<Signal[]> {
     const scope = parseScope(handle);
     const [rows, roster] = await Promise.all([loadAllRows(options.signal), loadRoster(options.signal)]);
@@ -656,6 +704,78 @@ export const CongressProvider: Provider<FilingRow> = {
     return normalizeFiling(raw, actor);
   },
 };
+
+/**
+ * Every disclosed trade in one ticker, by any member — followed or not.
+ *
+ * For the ticker page. Each card's actor is the member themself, with their
+ * own handle, rather than a watched subject's: nothing here goes through the
+ * feed's pruning, and the page links each row to the person.
+ *
+ * The trades read from the House PDFs come first. An aggregator, where a key
+ * is set, adds the Senate and anything filed since the last scrape; its copy
+ * of a House trade already read from the PDF is dropped. Option trades carry
+ * `OPTIONS_BADGE` so the page can keep them off the stock's own counts.
+ */
+export async function congressTradesFor(symbol: string, signal?: AbortSignal): Promise<Signal[]> {
+  const want = symbol.replace(/^\$/, '').trim().toUpperCase();
+  const [rows, roster, scraped] = await Promise.all([
+    loadAllRows(signal),
+    loadRoster(signal),
+    loadScraped(signal),
+  ]);
+  // Without the index the scraped trades cannot be put to names, and an empty
+  // answer would read as "nobody in Congress traded this".
+  if (rows.length === 0) throw new Error('The House Clerk index is unavailable');
+
+  const out: Signal[] = [];
+  const seen = new Set<string>();
+  const sameTrade = (surname: string, trade: ParsedTrade) =>
+    `${surname.toLowerCase()}|${trade.transactionDate}|${isPurchase(trade.transaction) ? 'b' : 's'}`;
+  const finishCard = (s: Signal, trade: ParsedTrade) => {
+    if (trade.option) s.badges = [...(s.badges ?? []), OPTIONS_BADGE];
+    out.push(s);
+  };
+
+  for (const row of rows) {
+    if (row.filingType !== PERIODIC_TRANSACTION_REPORT) continue;
+    const encoded = scraped.filings[row.docId];
+    // Checked on the compact tuples before decoding anything.
+    if (!encoded?.some((t) => sameTicker(t[0], want))) continue;
+
+    const legislator = findLegislator(roster, row);
+    const actor = actorFor(memberHandle(row), row, legislator);
+    for (const trade of scrapedTrades(row, scraped)) {
+      if (!sameTicker(trade.ticker, want)) continue;
+      seen.add(sameTrade(row.last, trade));
+      finishCard(normalizeTrade(trade, actor), trade);
+    }
+  }
+
+  if ((QUIVER_TOKEN || FMP_KEY) && !keyedDenied) {
+    try {
+      const keyed = (await fetchKeyedTrades(signal)).filter((t) => sameTicker(t.ticker, want));
+      for (const trade of keyed) {
+        const rep = trade.representative.toLowerCase();
+        // The Clerk row names the member the way their own page's handle does.
+        const row = rows.find(
+          (r) => rep.includes(r.last.toLowerCase()) && rep.includes(firstWord(r.first.toLowerCase())),
+        );
+        if (row && seen.has(sameTrade(row.last, trade))) continue;
+        const legislator = findByName(roster, trade.representative);
+        const handle = row ? memberHandle(row) : slug(trade.representative);
+        finishCard(normalizeTrade(trade, actorForTrade(handle, trade, legislator)), trade);
+      }
+    } catch (err) {
+      if (isAbort(err)) throw err;
+      if (isAccessDenied(err)) keyedDenied = true;
+      // The House trades read from the PDFs stand on their own.
+      console.warn('[congress] keyed trades unavailable for the ticker page:', err);
+    }
+  }
+
+  return out.sort((a, b) => b.timestamp - a.timestamp);
+}
 
 /**
  * Tag each trade with how many other members bought the same name recently.

@@ -486,8 +486,14 @@ Shadows are reserved for the only two things that float above the feed:
   menu is `ActionSheetIOS` (with an `Alert` fallback on Android). Add opens as
   a native modal screen. Don't design custom dialogs.
 
-**Motion:** there is none. Nothing uses `Animated`, `LayoutAnimation` or
-Reanimated. Feedback is instant:
+**Motion:** almost none. Two things move, both with Reanimated:
+
+- The tab bar's selector slides to the new tab (260ms, ease-out cubic) instead
+  of jumping, so changing page reads as one motion. It is placed without a
+  slide on launch.
+- `RippleRings` widens and fades the logo's rings on onboarding.
+
+Everything else is instant:
 
 - Raised controls (FAB, pill, primary button) go to opacity 0.85 and scale 0.96
   when pressed.
@@ -496,8 +502,8 @@ Reanimated. Feedback is instant:
   notification when adding a subject.
 - New content is announced to screen readers through live regions.
 
-If motion is ever added, it **must** check the OS reduce-motion setting. Nothing
-reads that setting today.
+Any motion **must** check the OS reduce-motion setting (`useReducedMotion`).
+With it on, the selector moves instantly and the rings hold still.
 
 ## Shapes
 

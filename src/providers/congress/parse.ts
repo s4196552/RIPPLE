@@ -392,7 +392,8 @@ export function normalizeTrade(trade: ParsedTrade, actor: Actor): Signal {
       // A member's disclosed trade is always a decision — there is no
       // compensation-mechanics equivalent in a periodic transaction report.
       discretionary: true,
-      kindLabel: buy ? 'PURCHASE' : 'SALE',
+      // A partial sale is still a sale, but the filing says which, and so do we.
+      kindLabel: buy ? 'PURCHASE' : /partial/i.test(trade.transaction) ? 'PARTIAL SALE' : 'SALE',
       assetName: trade.ticker.toUpperCase(),
       // The disclosed band, not its midpoint: the range is what was actually
       // filed, and the midpoint is our estimate of it.

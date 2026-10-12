@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { relativeTime, spokenTime } from '@/lib/time';
 import {
@@ -23,6 +22,8 @@ import { makeStyles, useTheme } from '@/ui/ThemeProvider';
 import { font, radius, space, tapSlop, type } from '@/ui/theme';
 import { type Tone } from '@/ui/tone';
 import { TonePill } from '@/ui/components/TonePill';
+import { openLink } from '@/lib/feedback';
+import { useTabBarSpace } from '@/ui/components/FloatingTabBar';
 
 /**
  * Disclosed transactions as a table, plus what the watched group traded most.
@@ -38,6 +39,8 @@ import { TonePill } from '@/ui/components/TonePill';
 export default function TradesScreen() {
   const c = useTheme();
   const styles = useStyles();
+  // Room for the last row to scroll clear of the floating tab bar.
+  const tabSpace = useTabBarSpace();
   const router = useRouter();
 
   const signals = useFeed((s) => s.signals);
@@ -54,12 +57,13 @@ export default function TradesScreen() {
   const holdings = useMemo(() => topAssets(rows), [rows]);
 
   const open = useCallback(async (url: string) => {
-    await WebBrowser.openBrowserAsync(url, {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      toolbarColor: c.bg,
-      controlsColor: c.accent,
-    });
+    await openLink(url);
   }, []);
+
+  const openTicker = useCallback(
+    (symbol: string) => router.push({ pathname: '/ticker/[symbol]', params: { symbol } }),
+    [router],
+  );
 
   if (!hydrated) return <View style={styles.screen} />;
 
@@ -83,7 +87,7 @@ export default function TradesScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: tabSpace }]}>
       {rows.length > 0 && (
         <>
           <Text style={styles.sectionTitle}>Trades</Text>
@@ -94,6 +98,7 @@ export default function TradesScreen() {
               key={row.signal.id}
               row={row}
               onOpen={(signal) => router.push({ pathname: '/filing/[id]', params: { id: signal.id } })}
+              onOpenTicker={openTicker}
             />
           ))}
         </>
@@ -124,7 +129,7 @@ export default function TradesScreen() {
           </Text>
 
           {holdings.map((holding, i) => (
-            <HoldingRow key={holding.ticker} holding={holding} rank={i + 1} />
+            <HoldingRow key={holding.ticker} holding={holding} rank={i + 1} onPress={openTicker} />
           ))}
         </>
       )}
@@ -139,11 +144,34 @@ export default function TradesScreen() {
  * two lines that keep the same reading order — trader and action up top, asset
  * and the numbers beneath.
  */
-/** Opens the in-app filing view, which links on to the original. */
-function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (signal: Signal) => void }) {
+/**
+ * Opens the in-app filing view, which links on to the original — except the
+ * asset, which opens the ticker's page.
+ *
+ * Three Pressables side by side rather than one with a button inside it,
+ * which on web would nest a <button> in a <button>. The pressed look is lifted
+ * to the card so the two filing targets still light it up as one. The second
+ * filing target (the numbers) is hidden from assistive tech: the first already
+ * says everything, and a screen reader should meet the filing once.
+ */
+function TradeCard({
+  row,
+  onOpen,
+  onOpenTicker,
+}: {
+  row: TradeRow;
+  onOpen: (signal: Signal) => void;
+  onOpenTicker: (symbol: string) => void;
+}) {
   const c = useTheme();
   const styles = useStyles();
+  const [pressed, setPressed] = useState(false);
   const { trade } = row;
+  const press = {
+    onPress: () => onOpen(row.signal),
+    onPressIn: () => setPressed(true),
+    onPressOut: () => setPressed(false),
+  };
   const buy = trade.action === 'buy';
 
   // Direction of the return itself, which is not the same as `tone` above —
@@ -156,29 +184,29 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (signal: Signal) =>
     row.changePct === null ? '—' : `${row.changePct >= 0 ? '+' : ''}${row.changePct.toFixed(2)}%`;
 
   return (
-    <Pressable
-      onPress={() => onOpen(row.signal)}
-      style={({ pressed }) => [styles.trade, pressed && styles.tradePressed]}
-      accessibilityRole="button"
-      // The row's meaning is spread across eight columns; the label has to
-      // carry them in the order a person would say them.
-      accessibilityLabel={
-        `${trade.traderName}${trade.traderTitle ? `, ${trade.traderTitle}` : ''}. ` +
-        `${trade.discretionary ? (buy ? 'Bought' : 'Sold') : trade.kindLabel} ` +
-        `${trade.assetName || row.ticker}, ${row.assetType}. ` +
-        `${trade.amountLabel ?? 'Amount undisclosed'}. ${relativeTime(row.timestamp)} ago. ` +
-        `Return ${row.changePct === null ? 'unavailable' : returnValue}. ` +
-        `${
-          row.quality
-            ? qualityLabel(row.quality)
-            : row.changePct === null
-              ? 'No price data'
-              : 'Not a decision, so no timing verdict'
-        }.`
-      }
-      accessibilityHint="Opens the filing"
-    >
-      <View style={styles.tradeTop}>
+    <View style={[styles.trade, pressed && styles.tradePressed]}>
+      <Pressable
+        {...press}
+        style={styles.tradeTop}
+        accessibilityRole="button"
+        // The row's meaning is spread across eight columns; the label has to
+        // carry them in the order a person would say them.
+        accessibilityLabel={
+          `${trade.traderName}${trade.traderTitle ? `, ${trade.traderTitle}` : ''}. ` +
+          `${trade.discretionary ? (buy ? 'Bought' : 'Sold') : trade.kindLabel} ` +
+          `${trade.assetName || row.ticker}, ${row.assetType}. ` +
+          `${trade.amountLabel ?? 'Amount undisclosed'}. ${relativeTime(row.timestamp)} ago. ` +
+          `Return ${row.changePct === null ? 'unavailable' : returnValue}. ` +
+          `${
+            row.quality
+              ? qualityLabel(row.quality)
+              : row.changePct === null
+                ? 'No price data'
+                : 'Not a decision, so no timing verdict'
+          }.`
+        }
+        accessibilityHint="Opens the filing"
+      >
         <Avatar
           uri={trade.traderPhotoUrl}
           name={trade.traderName}
@@ -204,40 +232,56 @@ function TradeCard({ row, onOpen }: { row: TradeRow; onOpen: (signal: Signal) =>
         ) : (
           <TonePill tone="neutral" label={shortKind(trade.kindLabel)} variant="tag" />
         )}
-      </View>
+      </Pressable>
 
       <View style={styles.tradeBottom}>
-        <Avatar uri={logoUrl(row.ticker)} name={row.ticker} size={26} square logo />
+        <Pressable
+          onPress={() => onOpenTicker(row.ticker)}
+          style={({ pressed: on }) => [styles.assetButton, on && styles.assetPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={`${row.ticker}: price and everyone trading it`}
+          accessibilityHint="Opens the ticker page"
+        >
+          <Avatar uri={logoUrl(row.ticker)} name={row.ticker} size={26} square logo />
 
-        <View style={styles.assetBlock}>
-          <Text style={styles.assetName} numberOfLines={1}>
-            {row.ticker}
-            <Text style={styles.assetType}> · {row.assetType}</Text>
-          </Text>
-          <Text style={styles.assetMeta} numberOfLines={1}>
-            {trade.amountLabel ?? 'Amount undisclosed'} · {relativeTime(row.timestamp)}
-          </Text>
-        </View>
+          <View style={styles.assetBlock}>
+            <Text style={styles.assetName} numberOfLines={1}>
+              {row.ticker}
+              <Text style={styles.assetType}> · {row.assetType}</Text>
+            </Text>
+            <Text style={styles.assetMeta} numberOfLines={1}>
+              {trade.amountLabel ?? 'Amount undisclosed'} · {relativeTime(row.timestamp)}
+            </Text>
+          </View>
+        </Pressable>
 
-        <View style={styles.numbers}>
-          {/* A solid pill rather than text in the tone colour: the tones are
-              shared by every mode and only carry small text at AA as a fill. */}
-          <TonePill tone={returnTone} label={returnValue} />
-          {/* Three distinct states, and they must not be conflated: a verdict,
-              no prices to draw one from, and nothing to judge because the
-              movement was not a decision. */}
-          {row.quality ? (
-            <Text style={styles.qualityText}>{qualityLabel(row.quality)}</Text>
-          ) : row.changePct === null ? (
-            <Text style={styles.qualityMuted}>No price data</Text>
-          ) : (
-            <Text style={styles.qualityMuted}>Not a decision</Text>
-          )}
-        </View>
+        <Pressable
+          {...press}
+          style={styles.numbersButton}
+          accessible={false}
+          focusable={false}
+          aria-hidden
+        >
+          <View style={styles.numbers}>
+            {/* A solid pill rather than text in the tone colour: the tones are
+                shared by every mode and only carry small text at AA as a fill. */}
+            <TonePill tone={returnTone} label={returnValue} />
+            {/* Three distinct states, and they must not be conflated: a verdict,
+                no prices to draw one from, and nothing to judge because the
+                movement was not a decision. */}
+            {row.quality ? (
+              <Text style={styles.qualityText}>{qualityLabel(row.quality)}</Text>
+            ) : row.changePct === null ? (
+              <Text style={styles.qualityMuted}>No price data</Text>
+            ) : (
+              <Text style={styles.qualityMuted}>Not a decision</Text>
+            )}
+          </View>
 
-        <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
+          <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
+        </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -276,17 +320,28 @@ function FilingCard({ filing, onOpen }: { filing: Signal; onOpen: (url: string) 
   );
 }
 
-function HoldingRow({ holding, rank }: { holding: AssetHolding; rank: number }) {
+function HoldingRow({
+  holding,
+  rank,
+  onPress,
+}: {
+  holding: AssetHolding;
+  rank: number;
+  onPress: (symbol: string) => void;
+}) {
+  const c = useTheme();
   const styles = useStyles();
   return (
-    <View
-      style={styles.holding}
-      accessible
+    <Pressable
+      onPress={() => onPress(holding.ticker)}
+      style={({ pressed }) => [styles.holding, pressed && styles.tradePressed]}
+      accessibilityRole="button"
       accessibilityLabel={
         `${rank}. ${holding.ticker}, ${holding.assetType}. ` +
         `${holding.traders} ${holding.traders === 1 ? 'person' : 'people'}. ` +
         `${holdingSummary(holding)}.`
       }
+      accessibilityHint="Opens the ticker page"
     >
       <Text style={styles.rank}>{rank}</Text>
       <Avatar uri={logoUrl(holding.ticker)} name={holding.ticker} size={30} square logo />
@@ -307,7 +362,9 @@ function HoldingRow({ holding, rank }: { holding: AssetHolding; rank: number }) 
           {holding.traders === 1 ? 'person' : 'people'}
         </Text>
       </View>
-    </View>
+
+      <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
+    </Pressable>
   );
 }
 
@@ -387,6 +444,26 @@ const useStyles = makeStyles((c) => ({
     alignItems: 'center',
     gap: space.sm,
     paddingLeft: space.xl + space.sm,
+  },
+  // The asset opens its ticker page: a target of its own, padded to 44pt.
+  assetButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: 44,
+    marginVertical: -6,
+    marginLeft: -6,
+    paddingLeft: 6,
+    borderRadius: radius.md,
+  },
+  assetPressed: {
+    backgroundColor: c.raised,
+  },
+  numbersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
   },
   assetBlock: {
     flex: 1,

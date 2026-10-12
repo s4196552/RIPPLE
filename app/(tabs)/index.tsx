@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
@@ -28,6 +27,8 @@ import { FilterChips } from '@/ui/components/FilterChips';
 import { SignalCard } from '@/ui/components/SignalCard';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
 import { font, radius, shadow, space, tint, type } from '@/ui/theme';
+import { openLink } from '@/lib/feedback';
+import { useTabBarSpace } from '@/ui/components/FloatingTabBar';
 
 /** One day of the feed, in the shape `SectionList` wants. */
 interface DigestSection {
@@ -45,6 +46,8 @@ interface DigestSection {
 export default function FeedScreen() {
   const c = useTheme();
   const styles = useStyles();
+  // Room for the last row to scroll clear of the floating tab bar.
+  const tabSpace = useTabBarSpace();
   const router = useRouter();
   // The sync itself is mounted by the tabs layout so every tab has data; this
   // screen only needs a handle for pull-to-refresh.
@@ -97,11 +100,7 @@ export default function FeedScreen() {
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    await WebBrowser.openBrowserAsync(signal.url, {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      toolbarColor: c.bg,
-      controlsColor: c.accent,
-    });
+    await openLink(signal.url, signal.actor.displayName);
   }, []);
 
   const openActor = useCallback(
@@ -202,7 +201,7 @@ export default function FeedScreen() {
             renderSectionHeader={({ section }) => <DigestHeader day={section.day} />}
             // A sticky header would cover the card it belongs to on a short day.
             stickySectionHeadersEnabled={false}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: tabSpace }]}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}

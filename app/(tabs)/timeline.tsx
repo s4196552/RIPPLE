@@ -1,5 +1,4 @@
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { relativeTime } from '@/lib/time';
@@ -9,6 +8,8 @@ import { EmptyState } from '@/ui/components/EmptyState';
 import { SignalTimeline } from '@/ui/components/SignalTimeline';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
 import { space, type } from '@/ui/theme';
+import { openLink } from '@/lib/feedback';
+import { useTabBarSpace } from '@/ui/components/FloatingTabBar';
 
 /**
  * The feed, laid on a time axis instead of stacked vertically.
@@ -20,6 +21,8 @@ import { space, type } from '@/ui/theme';
 export default function TimelineScreen() {
   const c = useTheme();
   const styles = useStyles();
+  // Room for the last row to scroll clear of the floating tab bar.
+  const tabSpace = useTabBarSpace();
   const router = useRouter();
 
   const signals = useFeed((s) => s.signals);
@@ -34,11 +37,7 @@ export default function TimelineScreen() {
   );
 
   const openSignal = useCallback(async (signal: { url: string }) => {
-    await WebBrowser.openBrowserAsync(signal.url, {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      toolbarColor: c.bg,
-      controlsColor: c.accent,
-    });
+    await openLink(signal.url);
   }, [c]);
 
   if (!hydrated) return <View style={styles.screen} />;
@@ -67,7 +66,7 @@ export default function TimelineScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: tabSpace }]}>
       <SignalTimeline signals={shown} onOpen={openSignal} />
       {lastUpdated ? (
         <Text style={styles.updated}>Updated {relativeTime(lastUpdated)} ago</Text>

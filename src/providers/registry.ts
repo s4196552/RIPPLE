@@ -1,4 +1,5 @@
 import { CongressProvider } from './congress/CongressProvider';
+import { FundsProvider } from './funds/FundsProvider';
 import { InsiderProvider } from './insider/InsiderProvider';
 import { PolicyProvider } from './policy/PolicyProvider';
 import { StocksProvider } from './stocks/StocksProvider';
@@ -23,6 +24,7 @@ export const PROVIDERS = {
   insider: InsiderProvider,
   policy: PolicyProvider,
   stocks: StocksProvider,
+  funds: FundsProvider,
 } satisfies Record<SourceId, Provider<any>>;
 
 export const SOURCE_IDS = Object.keys(PROVIDERS) as SourceId[];

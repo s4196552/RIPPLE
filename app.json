@@ -60,7 +60,15 @@
       "expo-router",
       "expo-status-bar",
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ripple uses a photo you choose as your profile picture. It stays on this device.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

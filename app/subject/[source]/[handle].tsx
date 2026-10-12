@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -16,18 +15,21 @@ import { DISCLOSURE_LIMIT_DAYS, disclosureLag, isLate, partyTag, withoutParty } 
 import { isAbort } from '@/lib/http';
 import { fillBuckets, monthSpans, shortDate, type ActivityBucket } from '@/lib/timeline';
 import { describe, getProvider } from '@/providers/registry';
-import type { Signal, SourceId } from '@/providers/types';
+import type { Signal, SocialLink, SourceId, SubjectProfile } from '@/providers/types';
 import { useFeed } from '@/store/feed';
 import { rememberSignals } from '@/store/signalCache';
 import { useWatchlist } from '@/store/watchlist';
 import { ActivityChart } from '@/ui/components/ActivityChart';
+import { FundView } from '@/ui/components/FundView';
+import { ProfileCard } from '@/ui/components/ProfileCard';
 import { Avatar } from '@/ui/components/Avatar';
 import { Segmented } from '@/ui/components/Segmented';
 import { SignalCard } from '@/ui/components/SignalCard';
 import { TradeCard } from '@/ui/components/TradeCard';
-import { groupGlyph } from '@/ui/groupGlyph';
+import { subjectAvatar } from '@/ui/subjectAvatar';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
 import { font, radius, space, tint, type } from '@/ui/theme';
+import { openLink } from '@/lib/feedback';
 
 type Tab = 'trades' | 'filings' | 'about';
 
@@ -48,7 +50,6 @@ export default function SubjectDetailScreen() {
   const router = useRouter();
 
   const meta = describe(source);
-  const group = groupGlyph(source, handle);
   const provider = getProvider(source);
 
   const subjects = useWatchlist((s) => s.subjects);
@@ -127,6 +128,26 @@ export default function SubjectDetailScreen() {
     return () => inFlight.current?.abort();
   }, [fetchSignals]);
 
+  // Facts and public accounts. Fetched alongside the signals, and quietly left
+  // out if it fails: the card is extra, the filings are the page.
+  const [profile, setProfile] = useState<SubjectProfile | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setProfile(null);
+    provider
+      .profile?.(handle, controller.signal)
+      .then((found) => {
+        if (!controller.signal.aborted) setProfile(found);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [provider, handle]);
+
+  const openProfileLink = useCallback(
+    (link: SocialLink) => void openLink(link.url, `${displayName} · ${link.handle}`),
+    [displayName],
+  );
+
   const confirmUnfollow = useCallback(() => {
     Alert.alert(
       `Stop following ${displayName}?`,
@@ -147,11 +168,7 @@ export default function SubjectDetailScreen() {
 
   const openSignal = useCallback(
     async (signal: Signal) => {
-      await WebBrowser.openBrowserAsync(signal.url, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-        toolbarColor: c.bg,
-        controlsColor: c.accent,
-      });
+      await openLink(signal.url, signal.actor.displayName);
     },
     [c],
   );
@@ -236,10 +253,8 @@ export default function SubjectDetailScreen() {
 
       <View style={styles.identity}>
         <Avatar
-          uri={watched?.avatarUrl ?? signals[0]?.actor.avatarUrl}
+          {...subjectAvatar(source, handle, watched?.avatarUrl ?? signals[0]?.actor.avatarUrl)}
           name={displayName}
-          glyph={group?.glyph}
-          square={source === 'stocks' || source === 'insider'}
           size={64}
         />
         {/* One heading, so the name and its subtitle are announced together. */}
@@ -303,6 +318,8 @@ export default function SubjectDetailScreen() {
         </Pressable>
       )}
 
+      {profile && <ProfileCard profile={profile} onOpen={openProfileLink} />}
+
       {loading && signals.length === 0 ? (
         <View style={styles.centered}>
           <ActivityIndicator color={c.accent} />
@@ -311,6 +328,10 @@ export default function SubjectDetailScreen() {
         <View style={styles.centered} accessibilityLiveRegion="polite">
           <Text style={styles.emptyText}>{error ?? 'No signals on file yet.'}</Text>
         </View>
+      ) : source === 'funds' ? (
+        // A fund reports holdings, not trades: its page is built around the
+        // quarterly book rather than a stream of filings.
+        <FundView signals={signals} onOpenFiling={openSignal} />
       ) : (
         <>
           <View style={styles.stats}>

@@ -1,4 +1,13 @@
 import { getJson, getText, isAbort } from '@/lib/http';
+import {
+  ARCHIVES_BASE,
+  SEC_HEADERS,
+  SUBMISSIONS_BASE,
+  enqueue,
+  loadTickerMap,
+  padCik,
+  type TickerEntry,
+} from '@/providers/sec';
 import { logoUrl } from '@/providers/logos';
 import type {
   Actor,
@@ -40,36 +49,14 @@ import {
 const BENCHMARK_SYMBOL = 'SPY';
 
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * ✅  NO API KEY REQUIRED — fully public SEC data
- * ═══════════════════════════════════════════════════════════════════════════
  * Corporate insider trading, straight from EDGAR. Officers, directors and 10%
  * owners must file a Form 4 within two business days of trading their own
  * company's stock, and every one of those filings is free and machine-readable.
  *
  * A watched subject here is a ticker; signals are that company's insider
- * transactions.
- *
- * SEC FAIR ACCESS RULES — https://www.sec.gov/os/webmaster-faq#developers
- *   • A descriptive User-Agent identifying the app is required. Requests
- *     without one get thrown a 403.
- *   • Maximum 10 requests/second. The queue below serialises with a small gap,
- *     which keeps us far under it even with many watched tickers.
- * Both are honoured here. Please keep them honoured.
- * ═══════════════════════════════════════════════════════════════════════════
+ * transactions. SEC's access rules, and the queue that honours them, are in
+ * `@/providers/sec`.
  */
-
-/**
- * SEC requires a real contact address. Replace with your own before shipping —
- * it is how they reach you instead of silently blocking your users.
- */
-const SEC_HEADERS = {
-  'user-agent': 'Ripple/1.0 (contact: support@ripple.app)',
-};
-
-const TICKER_MAP_URL = 'https://www.sec.gov/files/company_tickers.json';
-const SUBMISSIONS_BASE = 'https://data.sec.gov/submissions';
-const ARCHIVES_BASE = 'https://www.sec.gov/Archives/edgar/data';
 
 /** Filings inspected per ticker. Each costs one request, so keep it modest. */
 const FILINGS_PER_TICKER = 8;
@@ -80,71 +67,24 @@ const FILINGS_PER_TICKER = 8;
  * slow for the feed, which is why the feed keeps the smaller default.
  */
 const MAX_FILINGS_PER_TICKER = 40;
-/** Gap between SEC requests. 120ms ≈ 8/s, comfortably inside their 10/s cap. */
-const REQUEST_GAP_MS = 120;
-
-// ───────────────────────────────────────────────────────────────────────────
-// Rate-limited request queue
-// ───────────────────────────────────────────────────────────────────────────
-
-let queue: Promise<unknown> = Promise.resolve();
 
 /**
- * Serialise every SEC call with a fixed gap. Fanning out across watched tickers
- * with `Promise.all` would burst well past their limit and get the whole app
- * blocked, which is a much worse failure than being slightly slower.
+ * The default list: the largest US companies, whose executives' Form 4s are
+ * the ones that make the news. Tickers as EDGAR's ticker map spells them, so
+ * each resolves to a CIK on its first fetch.
  */
-function enqueue<T>(work: () => Promise<T>): Promise<T> {
-  const result = queue.then(async () => {
-    await new Promise((r) => setTimeout(r, REQUEST_GAP_MS));
-    return work();
-  });
-  // Keep the chain alive even when one link rejects.
-  queue = result.catch(() => undefined);
-  return result;
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Ticker -> CIK
-// ───────────────────────────────────────────────────────────────────────────
-
-interface TickerEntry {
-  cik_str: number;
-  ticker: string;
-  title: string;
-}
-
-let tickerMap: TickerEntry[] | null = null;
-let tickerMapPromise: Promise<TickerEntry[]> | null = null;
-
-/** The full ticker->CIK map is ~800KB, so it's fetched once and shared. */
-async function loadTickerMap(signal?: AbortSignal): Promise<TickerEntry[]> {
-  if (tickerMap) return tickerMap;
-  if (tickerMapPromise) return tickerMapPromise;
-
-  tickerMapPromise = enqueue(() =>
-    getJson<Record<string, TickerEntry>>(TICKER_MAP_URL, {
-      headers: SEC_HEADERS,
-      signal,
-      timeoutMs: 25_000,
-    }),
-  )
-    .then((raw) => {
-      tickerMap = Object.values(raw);
-      return tickerMap;
-    })
-    .catch((err) => {
-      tickerMapPromise = null; // allow a retry on the next attempt
-      throw err;
-    });
-
-  return tickerMapPromise;
-}
-
-function padCik(cik: number | string): string {
-  return String(cik).padStart(10, '0');
-}
-
+const NOTABLE: { ticker: string; name: string; sector: string }[] = [
+  { ticker: 'NVDA', name: 'NVIDIA Corporation', sector: 'Semiconductors' },
+  { ticker: 'AAPL', name: 'Apple Inc.', sector: 'Consumer tech' },
+  { ticker: 'MSFT', name: 'Microsoft Corporation', sector: 'Software' },
+  { ticker: 'AMZN', name: 'Amazon.com, Inc.', sector: 'E-commerce and cloud' },
+  { ticker: 'META', name: 'Meta Platforms, Inc.', sector: 'Social media' },
+  { ticker: 'GOOGL', name: 'Alphabet Inc.', sector: 'Search and cloud' },
+  { ticker: 'TSLA', name: 'Tesla, Inc.', sector: 'Electric vehicles' },
+  { ticker: 'AVGO', name: 'Broadcom Inc.', sector: 'Semiconductors' },
+  { ticker: 'PLTR', name: 'Palantir Technologies Inc.', sector: 'Software' },
+  { ticker: 'JPM', name: 'JPMorgan Chase & Co.', sector: 'Banking' },
+];
 // ───────────────────────────────────────────────────────────────────────────
 // Filings
 // ───────────────────────────────────────────────────────────────────────────
@@ -245,13 +185,27 @@ export const InsiderProvider: Provider<Form4> = {
   subjectNoun: 'a company',
   provenance: 'SEC EDGAR, no key required',
 
+  subjectAvatarUrl(handle: string): string | null {
+    return logoUrl(handle.replace(/^\$/, ''));
+  },
+
   mode(): ProviderMode {
     return 'public';
   },
 
   async searchSubjects(query: string, signal?: AbortSignal): Promise<SubjectResult[]> {
     const term = query.trim().replace(/^\$/, '').toLowerCase();
-    if (!term) return [];
+    // Nothing typed: the companies whose insiders the market watches most,
+    // so the screen opens on something to follow. Offline, like the parties.
+    if (!term) {
+      return NOTABLE.map((n) => ({
+        source: 'insider' as const,
+        handle: n.ticker,
+        displayName: n.name,
+        subtitle: `$${n.ticker} · ${n.sector}`,
+        avatarUrl: logoUrl(n.ticker),
+      }));
+    }
 
     let entries: TickerEntry[];
     try {

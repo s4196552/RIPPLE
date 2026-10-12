@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Tide line">
+  <circle cx="128" cy="128" r="128" fill="#1B2844"/>
+  <path d="M60 92q17 -30 34 0t34 0t34 0t34 0" stroke="#21A1E4" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M60 128q17 -20 34 0t34 0t34 0t34 0" stroke="#21A1E4" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M60 164q17 -10 34 0t34 0t34 0t34 0" stroke="#21A1E4" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

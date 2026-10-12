@@ -96,7 +96,7 @@ describe('disclosed data recipients', () => {
      * they are destinations for a link the user chooses to open, which the
      * policy covers in its own paragraph rather than in the recipient table.
      */
-    const linkOnly = ['www.capitoltrades.com', 'finance.yahoo.com'];
+    const linkOnly = ['www.capitoltrades.com', 'finance.yahoo.com', 'www.whitehouse.gov'];
 
     for (const host of hostsReferencedIn('src/providers')) {
       if (linkOnly.includes(host)) continue;

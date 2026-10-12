@@ -25,3 +25,20 @@ export function logoUrl(symbol: string | null | undefined): string | null {
   // subject, and a stray `/` or `?` would otherwise reshape the URL.
   return `${LOGO_BASE}/${encodeURIComponent(clean)}.png`;
 }
+
+/**
+ * A site's own icon, by domain, from Google's favicon service.
+ *
+ * For the subjects with no ticker to address a logo by — a private fund. It
+ * answers any domain, but with a blurred globe or a 16px icon scaled up where
+ * the site publishes nothing better, so it is only used for domains checked
+ * by eye to return a real mark (see `KNOWN_FUNDS`), never for one learned at
+ * runtime.
+ */
+const SITE_ICON_BASE = 'https://www.google.com/s2/favicons';
+
+export function siteIconUrl(domain: string | null | undefined): string | null {
+  const clean = domain?.trim().toLowerCase();
+  if (!clean) return null;
+  return `${SITE_ICON_BASE}?sz=128&domain=${encodeURIComponent(clean)}`;
+}

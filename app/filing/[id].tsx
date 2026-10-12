@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
@@ -13,6 +12,7 @@ import {
   withoutParty,
 } from '@/lib/filing';
 import { hostLabel, pct } from '@/lib/format';
+import { logoUrl } from '@/providers/logos';
 import { describe } from '@/providers/registry';
 import { findSignal } from '@/store/signalCache';
 import { Avatar } from '@/ui/components/Avatar';
@@ -23,6 +23,7 @@ import { shareSignal } from '@/ui/signalActions';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
 import { font, radius, space, type } from '@/ui/theme';
 import { spokenLabel, type Tone } from '@/ui/tone';
+import { openLink } from '@/lib/feedback';
 
 const KIND: Record<string, string> = {
   congress: 'Periodic Transaction Report',
@@ -85,11 +86,7 @@ export default function FilingScreen() {
   const badges = (signal.badges ?? []).filter((b) => !['BUY', 'SELL', 'LATE FILING'].includes(b));
 
   const open = () =>
-    WebBrowser.openBrowserAsync(signal.url, {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      toolbarColor: c.bg,
-      controlsColor: c.accent,
-    });
+    openLink(signal.url, signal.actor.displayName);
 
   const rows: { label: string; value: string; mono?: boolean }[] = [
     ...(trade?.amountLabel ? [{ label: 'Amount, as filed', value: trade.amountLabel, mono: true }] : []),
@@ -158,6 +155,26 @@ export default function FilingScreen() {
           <View style={styles.flex} />
           <Ionicons name="chevron-forward" size={18} color={c.textSubtle} />
         </Pressable>
+
+        {signal.ticker ? (
+          <Pressable
+            onPress={() => router.push({ pathname: '/ticker/[symbol]', params: { symbol: signal.ticker! } })}
+            style={({ pressed }) => [styles.actor, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`${signal.ticker}: price and everyone trading it`}
+            accessibilityHint="Opens the ticker page"
+          >
+            <Avatar uri={logoUrl(signal.ticker)} name={signal.ticker} size={32} square logo />
+            <Text style={[styles.actorName, styles.mono]} numberOfLines={1}>
+              {signal.ticker}
+            </Text>
+            <Text style={styles.actorPlace} numberOfLines={1}>
+              Price and everyone trading it
+            </Text>
+            <View style={styles.flex} />
+            <Ionicons name="chevron-forward" size={18} color={c.textSubtle} />
+          </Pressable>
+        ) : null}
 
         {trade ? null : <Text style={styles.sentence}>{signal.text}</Text>}
 

@@ -259,7 +259,7 @@ function Sources() {
     <>
       <Heading
         eyebrow="What Ripple watches"
-        title="Four public sources, one feed."
+        title="Five public sources, one feed."
         lede="Every item links to the original filing, so you can always check the source."
       />
       <View style={styles.sourceList}>
@@ -402,7 +402,7 @@ function Start({ onFollow, onExplore }: { onFollow: () => void; onExplore: () =>
         onPress={onExplore}
         style={({ pressed }) => [styles.choice, styles.choiceSecondary, pressed && styles.pressed]}
         accessibilityRole="button"
-        accessibilityLabel="Explore a starter feed. A sample of recent filings from all four sources."
+        accessibilityLabel="Explore a starter feed. A sample of recent filings from every source."
       >
         <View style={[styles.choiceIcon, { backgroundColor: tint(c.accent, 0.16) }]}>
           <RingsGlyph color={c.accent} />
@@ -410,7 +410,7 @@ function Start({ onFollow, onExplore }: { onFollow: () => void; onExplore: () =>
         <View style={styles.flex}>
           <Text style={styles.choiceTitle}>Explore a starter feed</Text>
           <Text style={[styles.choiceText, { color: c.textMuted }]}>
-            A sample of recent filings from all four sources.
+            A sample of recent filings from every source.
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={c.text} />

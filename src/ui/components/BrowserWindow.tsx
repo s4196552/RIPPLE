@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { hostLabel } from '@/lib/format';
+import { PDFJS_BASE, bytesToBase64, isPdfUrl, pdfViewerHtml } from '@/lib/pdfViewer';
 import { useBrowser } from '@/store/browser';
 import { makeStyles, useTheme } from '../ThemeProvider';
 import { radius, space, tapSlop, type } from '../theme';
@@ -31,6 +32,10 @@ import { radius, space, tapSlop, type } from '../theme';
  * `frame-ancestors 'none'` and the House Clerk sends `X-Frame-Options: DENY`.
  * So `openLink` sends web users to a real browser tab instead, which is the
  * only thing that actually works there.
+ *
+ * Android's web view cannot draw a PDF — and House trade disclosures are all
+ * PDFs — so there the window fetches the file itself and shows it through the
+ * pdf.js page in `@/lib/pdfViewer`. iOS draws PDFs natively.
  */
 export function BrowserWindow() {
   const c = useTheme();
@@ -44,6 +49,33 @@ export function BrowserWindow() {
   const [failed, setFailed] = useState(false);
   const [pageTitle, setPageTitle] = useState<string | null>(null);
   const [canGoBack, setCanGoBack] = useState(false);
+  /** Bumped by "Try again", so a PDF is fetched afresh rather than reloaded. */
+  const [attempt, setAttempt] = useState(0);
+  /** The viewer page for a PDF on Android, once its bytes are in. */
+  const [pdfHtml, setPdfHtml] = useState<string | null>(null);
+
+  const url = target?.url ?? null;
+  const viaPdfViewer = url !== null && Platform.OS === 'android' && isPdfUrl(url);
+
+  useEffect(() => {
+    setPdfHtml(null);
+    if (!url || !viaPdfViewer) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setFailed(false);
+    fetch(url, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .then((buf) => setPdfHtml(pdfViewerHtml(bytesToBase64(new Uint8Array(buf)))))
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setLoading(false);
+        setFailed(true);
+      });
+    return () => controller.abort();
+  }, [url, viaPdfViewer, attempt]);
 
   // Every open is a fresh document, so the chrome must not inherit the last
   // one's title or its error.
@@ -133,7 +165,8 @@ export function BrowserWindow() {
                 onPress={() => {
                   setFailed(false);
                   setLoading(true);
-                  webRef.current?.reload();
+                  if (viaPdfViewer) setAttempt((n) => n + 1);
+                  else webRef.current?.reload();
                 }}
                 style={({ pressed }) => [styles.button, pressed && styles.pressed]}
                 accessibilityRole="button"
@@ -152,10 +185,13 @@ export function BrowserWindow() {
               </Pressable>
             </View>
           </View>
+        ) : viaPdfViewer && !pdfHtml ? (
+          // Still fetching the PDF; the spinner above says so.
+          <View style={[styles.web, styles.webContainer]} />
         ) : (
           <WebView
             ref={webRef}
-            source={{ uri: target.url }}
+            source={viaPdfViewer && pdfHtml ? { html: pdfHtml, baseUrl: PDFJS_BASE } : { uri: target.url }}
             style={styles.web}
             // The page paints its own background; without this the app's dark
             // ground shows through every white document while it loads.
@@ -166,7 +202,11 @@ export function BrowserWindow() {
               setLoading(false);
               setFailed(true);
             }}
-            onNavigationStateChange={onNavigate}
+            onNavigationStateChange={viaPdfViewer ? undefined : onNavigate}
+            // The PDF page says when it has failed; a blank page would not.
+            onMessage={({ nativeEvent }) => {
+              if (nativeEvent.data === 'pdf-error') setFailed(true);
+            }}
             // These are public documents, not an app surface: no reason to run
             // anything the page wants to store or install.
             thirdPartyCookiesEnabled={false}

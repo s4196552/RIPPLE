@@ -1,10 +1,12 @@
 import { getJson } from '@/lib/http';
+import { orderLinks, socialLink } from '@/lib/social';
 import type {
   Actor,
   GetSignalsOptions,
   Provider,
   ProviderMode,
   Signal,
+  SubjectProfile,
   SubjectResult,
 } from '@/providers/types';
 import {
@@ -58,6 +60,30 @@ const TOPIC_HINTS = [
   'immigration',
   'shipbuilding',
 ];
+
+/**
+ * Where the White House and the President post. Every policy subject is
+ * attributed to the White House, so every one shares this card.
+ *
+ * Curated by hand — no dataset publishes these — and checked October 2026. The
+ * President's personal account is where tariff and policy news often lands
+ * first, hours before anything reaches the Federal Register, which is why it is
+ * here at all.
+ */
+const WHITE_HOUSE_PROFILE: SubjectProfile = {
+  facts: ['Executive Office of the President', 'Signals are documents published in the Federal Register'],
+  links: orderLinks([
+    socialLink('website', 'https://www.whitehouse.gov'),
+    socialLink('x', 'WhiteHouse'),
+    socialLink('instagram', 'whitehouse'),
+    socialLink('facebook', 'WhiteHouse'),
+    socialLink('youtube', 'WhiteHouse'),
+    socialLink('tiktok', 'whitehouse'),
+    socialLink('truth', 'realDonaldTrump', 'President Trump'),
+    socialLink('x', 'POTUS', 'The President'),
+  ]),
+  provenance: 'Official accounts, listed by Ripple',
+};
 
 interface FederalRegisterResponse {
   count?: number;
@@ -162,6 +188,10 @@ export const PolicyProvider: Provider<FederalRegisterDocument> = {
     return [...freeText, ...presets, ...hints]
       .filter((r) => (seen.has(r.handle) ? false : (seen.add(r.handle), true)))
       .slice(0, 12);
+  },
+
+  async profile(): Promise<SubjectProfile> {
+    return WHITE_HOUSE_PROFILE;
   },
 
   async getSignals(handle: string, options: GetSignalsOptions = {}): Promise<Signal[]> {

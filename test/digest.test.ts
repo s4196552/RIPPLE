@@ -31,7 +31,7 @@ function signal(
 
 /** Stand-in for the provider registry, which the module deliberately avoids. */
 const labelFor = (source: SourceId) =>
-  ({ congress: 'Congress', insider: 'Insiders', policy: 'Policy', stocks: 'Stocks' })[source];
+  ({ congress: 'Congress', insider: 'Insiders', policy: 'Policy', stocks: 'Stocks', funds: 'Funds' })[source];
 
 describe('dayStartOf', () => {
   it('snaps to UTC midnight', () => {

@@ -41,6 +41,8 @@ interface WatchlistState {
   hydrated: boolean;
 
   add: (result: SubjectResult) => void;
+  /** Follow several at once, in one write. Returns how many were actually new. */
+  addMany: (results: readonly SubjectResult[]) => number;
   /** Merge a backup in. Additive: returns how many were actually new. */
   restore: (incoming: readonly BackupSubject[]) => number;
   remove: (source: SourceId, handle: string) => void;
@@ -62,22 +64,39 @@ export const useWatchlist = create<WatchlistState>()(
       hiddenSources: [],
       hydrated: false,
 
-      add: (result) =>
-        set((state) => {
-          const key = subjectKey(result.source, result.handle);
-          if (state.subjects.some((s) => subjectKey(s.source, s.handle) === key)) return state;
+      add: (result) => {
+        get().addMany([result]);
+      },
 
-          const subject: WatchedSubject = {
-            source: result.source,
-            handle: result.handle,
-            displayName: result.displayName,
-            subtitle: result.subtitle ?? null,
-            avatarUrl: result.avatarUrl ?? null,
-            addedAt: Date.now(),
-            muted: false,
-          };
-          return { subjects: [subject, ...state.subjects] };
-        }),
+      addMany: (results) => {
+        let added = 0;
+
+        set((state) => {
+          const have = new Set(state.subjects.map((s) => subjectKey(s.source, s.handle)));
+          const fresh: WatchedSubject[] = [];
+          const now = Date.now();
+
+          for (const result of results) {
+            const key = subjectKey(result.source, result.handle);
+            if (have.has(key)) continue;
+            have.add(key);
+            fresh.push({
+              source: result.source,
+              handle: result.handle,
+              displayName: result.displayName,
+              subtitle: result.subtitle ?? null,
+              avatarUrl: result.avatarUrl ?? null,
+              addedAt: now,
+              muted: false,
+            });
+          }
+
+          added = fresh.length;
+          return fresh.length > 0 ? { subjects: [...fresh, ...state.subjects] } : state;
+        });
+
+        return added;
+      },
 
       restore: (incoming) => {
         let added = 0;

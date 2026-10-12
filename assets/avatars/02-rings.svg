@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Rings">
+  <circle cx="128" cy="128" r="128" fill="#E4DBFA"/>
+  <circle cx="112" cy="144" r="14" fill="#3B2A8C"/>
+  <circle cx="112" cy="144" r="44" stroke="#3B2A8C" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="112" cy="144" r="74" stroke="#3B2A8C" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

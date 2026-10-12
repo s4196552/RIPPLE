@@ -1,10 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import {
   Alert,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -14,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { ALL_DESCRIPTORS, getProvider } from '@/providers/registry';
-import { tapFeedback } from '@/lib/feedback';
+import { openLink, tapFeedback } from '@/lib/feedback';
 import { relativeTime } from '@/lib/time';
 import { iconName } from '@/ui/icons';
 import { usePreferences } from '@/store/preferences';
@@ -376,17 +374,10 @@ function LinkRow({ icon, label, url }: { icon: string; label: string; url: strin
   const styles = useStyles();
   return (
     <Pressable
-      onPress={() => {
-        // The in-app browser keeps the user in Ripple; falling back to the
-        // system browser matters on web, where there is no such thing.
-        void WebBrowser.openBrowserAsync(url, {
-          toolbarColor: c.bg,
-          controlsColor: c.accent,
-        }).catch(() => Linking.openURL(url));
-      }}
+      onPress={() => void openLink(url, label)}
       style={({ pressed }) => [styles.row, styles.linkRow, pressed && styles.rowPressed]}
       accessibilityRole="link"
-      accessibilityLabel={`${label}. Opens in a browser.`}
+      accessibilityLabel={`${label}. Opens the page.`}
     >
       <Ionicons name={iconName(icon)} size={16} color={c.textMuted} />
       <Text style={styles.linkLabel}>{label}</Text>

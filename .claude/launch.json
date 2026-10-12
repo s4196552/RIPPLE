@@ -14,6 +14,13 @@
       "runtimeArgs": ["expo", "start", "--web", "--port", "8082"],
       "port": 8082,
       "autoPort": false
+    },
+    {
+      "name": "ripple-expo-go",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set REACT_NATIVE_PACKAGER_HOSTNAME=192.168.1.109&& npx expo start --go --lan --port 8083"],
+      "port": 8083,
+      "autoPort": false
     }
   ]
 }

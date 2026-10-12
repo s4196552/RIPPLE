@@ -1,8 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Linking, Platform } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
+import { useBrowser } from '@/store/browser.ts';
 import { usePreferences } from '@/store/preferences.ts';
-import type { Palette } from '@/ui/theme.ts';
 
 /**
  * The two things a preference had to reach into every screen to change:
@@ -36,19 +35,20 @@ export function successFeedback() {
 /**
  * Open a source document.
  *
- * In-app keeps the user inside Ripple, which is the better default for reading
- * one filing and coming back. The system browser is the right answer for anyone
- * who wants their own extensions, reader mode, or a real tab they can keep.
+ * In-app keeps the user inside Ripple, in the app's own browser window
+ * (`BrowserWindow`, mounted at the root), which is the better default for
+ * reading one filing and coming back. The system browser is the right answer
+ * for anyone who wants their own extensions, reader mode, or a real tab they
+ * can keep — and the only answer on web, where a page cannot frame the House
+ * Clerk's or the Federal Register's documents.
+ *
+ * `title` is what the window shows until the page reports its own.
  */
-export async function openLink(url: string, palette: Palette): Promise<void> {
-  if (usePreferences.getState().linkTarget === 'system') {
+export async function openLink(url: string, title?: string | null): Promise<void> {
+  if (Platform.OS === 'web' || usePreferences.getState().linkTarget === 'system') {
     await Linking.openURL(url);
     return;
   }
 
-  await WebBrowser.openBrowserAsync(url, {
-    presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-    toolbarColor: palette.bg,
-    controlsColor: palette.accent,
-  });
+  useBrowser.getState().open(url, title ?? null);
 }

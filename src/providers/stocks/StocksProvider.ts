@@ -1,5 +1,6 @@
 import { getJson, isAbort, q } from '@/lib/http';
 import { hashString, seededRandom } from '@/lib/rng';
+import { logoUrl } from '@/providers/logos';
 import type {
   Actor,
   GetSignalsOptions,
@@ -125,8 +126,8 @@ async function fetchFinnhubSearch(term: string, signal?: AbortSignal): Promise<S
       source: 'stocks' as const,
       handle: r.symbol!,
       displayName: r.description || r.symbol!,
-      subtitle: r.type || null,
-      avatarUrl: null,
+      subtitle: [`$${r.symbol}`, r.type].filter(Boolean).join(' · '),
+      avatarUrl: logoUrl(r.symbol),
     }));
 }
 
@@ -240,8 +241,8 @@ async function fetchYahooSearch(term: string, signal?: AbortSignal): Promise<Sub
       source: 'stocks' as const,
       handle: r.symbol!,
       displayName: r.longname ?? r.shortname ?? r.symbol!,
-      subtitle: [r.exchDisp, r.typeDisp].filter(Boolean).join(' · ') || null,
-      avatarUrl: null,
+      subtitle: [`$${r.symbol}`, r.exchDisp, r.typeDisp].filter(Boolean).join(' · '),
+      avatarUrl: logoUrl(r.symbol),
     }));
 }
 
@@ -303,7 +304,10 @@ async function loadTickerSeries(
   }
 }
 
-/** Small directory so a short query still shows something useful. */
+/**
+ * Small directory: the default list before anything is typed, and a fallback
+ * so a short query still shows something useful when search is down.
+ */
 const POPULAR = [
   { symbol: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ' },
   { symbol: 'NVDA', name: 'NVIDIA Corporation', exchange: 'NASDAQ' },
@@ -313,7 +317,7 @@ const POPULAR = [
   { symbol: 'GOOGL', name: 'Alphabet Inc.', exchange: 'NASDAQ' },
   { symbol: 'META', name: 'Meta Platforms, Inc.', exchange: 'NASDAQ' },
   { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', exchange: 'NYSE Arca' },
-  { symbol: 'BTC-USD', name: 'Bitcoin USD', exchange: 'CCC' },
+  { symbol: 'BTC-USD', name: 'Bitcoin USD', exchange: 'Crypto' },
   { symbol: 'COIN', name: 'Coinbase Global, Inc.', exchange: 'NASDAQ' },
 ] as const;
 
@@ -327,6 +331,10 @@ export const StocksProvider: Provider<TickerEvent> = {
   subjectNoun: 'a ticker',
   provenance: 'Yahoo Finance, no key required',
 
+  subjectAvatarUrl(handle: string): string | null {
+    return logoUrl(handle.replace(/^\$/, ''));
+  },
+
   mode(): ProviderMode {
     if (sampleSymbols.size > 0) return 'mock';
     return FINNHUB_KEY ? 'live' : 'public';
@@ -334,18 +342,20 @@ export const StocksProvider: Provider<TickerEvent> = {
 
   async searchSubjects(query: string, signal?: AbortSignal): Promise<SubjectResult[]> {
     const term = query.trim().replace(/^\$/, '');
-    if (!term) return [];
-
     const lower = term.toLowerCase();
     const local: SubjectResult[] = POPULAR.filter(
-      (p) => p.symbol.toLowerCase().startsWith(lower) || p.name.toLowerCase().includes(lower),
+      (p) => !lower || p.symbol.toLowerCase().startsWith(lower) || p.name.toLowerCase().includes(lower),
     ).map((p) => ({
       source: 'stocks' as const,
       handle: p.symbol,
       displayName: p.name,
-      subtitle: p.exchange,
-      avatarUrl: null,
+      subtitle: `$${p.symbol} · ${p.exchange}`,
+      avatarUrl: logoUrl(p.symbol),
     }));
+
+    // Nothing typed: the popular list is the screen's default, so it opens on
+    // tickers to follow rather than an empty field. It costs no network.
+    if (!term) return local;
 
     try {
       const remote = await fetchRemoteMatches(term, signal);
@@ -370,7 +380,7 @@ export const StocksProvider: Provider<TickerEvent> = {
       handle: series.symbol,
       displayName: series.symbol,
       subtitle: series.currency,
-      avatarUrl: null,
+      avatarUrl: logoUrl(series.symbol),
     };
 
     let events = deriveEvents(series);

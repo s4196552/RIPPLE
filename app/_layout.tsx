@@ -16,6 +16,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useNavHistoryRecorder } from '@/hooks/useNavControls';
 import { usePreferences } from '@/store/preferences';
+import { BrowserWindow } from '@/ui/components/BrowserWindow';
 import { NavControls } from '@/ui/components/NavControls';
 import { ThemeProvider, useTheme, useThemeName } from '@/ui/ThemeProvider';
 import { isDark, type } from '@/ui/theme';
@@ -116,10 +117,13 @@ function Chrome() {
           <Stack.Screen name="add/[source]" options={{ title: 'Search' }} />
           <Stack.Screen name="subject/[source]/[handle]" options={{ title: '' }} />
           <Stack.Screen name="filing/[id]" options={{ title: '' }} />
+          <Stack.Screen name="ticker/[symbol]" options={{ title: '' }} />
           <Stack.Screen name="settings" options={{ title: 'Settings' }} />
           <Stack.Screen name="terms" options={{ title: 'Terms of Service' }} />
           <Stack.Screen name="privacy" options={{ title: 'Privacy Policy' }} />
         </Stack>
+        {/* Over every route: any screen can open a document with `openLink`. */}
+        <BrowserWindow />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

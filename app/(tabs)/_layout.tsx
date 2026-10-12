@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs, useRouter } from 'expo-router';
-import { Platform, Pressable, StyleSheet, Text, View, type ColorValue } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useFeedSync } from '@/hooks/useFeedSync';
 import { usePreferences } from '@/store/preferences';
 import { useTheme } from '@/ui/ThemeProvider';
-import { font, space, tapSlop, type } from '@/ui/theme';
-import { Glyph } from '@/ui/components/Glyph';
+import { space, tapSlop, type } from '@/ui/theme';
+import { FloatingTabBar } from '@/ui/components/FloatingTabBar';
 
 export default function TabsLayout() {
   const c = useTheme();
@@ -21,6 +21,8 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      // Our own floating pill, the same on every tab. See FloatingTabBar.
+      tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
         headerStyle: { backgroundColor: c.bg },
         headerTintColor: c.text,
@@ -38,93 +40,14 @@ export default function TabsLayout() {
         // tab root and home duplicates the first tab. Stack screens still get
         // it from the root layout.
         headerRight: () => <HeaderActions />,
-        tabBarStyle: {
-          backgroundColor: c.surface,
-          borderTopColor: c.border,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          // On web the bar is a fixed 49 with no safe-area inset to grow into,
-          // and the label box was squeezed to 10px under the icon — every
-          // descender clipped. Native keeps the navigator's own inset-aware
-          // height, which setting `height` here would throw away.
-          ...(Platform.OS === 'web' ? { height: 60, paddingTop: 6, paddingBottom: 6 } : null),
-        },
-        // The icon takes the accent; the label stays in ink. Small text never
-        // sits in an accent colour (see `@/ui/theme`), and the accent fill on
-        // the icon plus the heavier label still mark the selected tab.
-        tabBarActiveTintColor: c.accent,
-        tabBarInactiveTintColor: c.textSubtle,
-        tabBarLabel: ({ focused, children }) => (
-          <Text
-            style={{
-              ...type.micro,
-              letterSpacing: 0,
-              fontFamily: focused ? font.bold : font.semibold,
-              color: focused ? c.text : c.textSubtle,
-              // `flexShrink: 0` because on web the label is a flex child under
-              // a growing icon slot, and it was the one that shrank.
-              flexShrink: 0,
-            }}
-          >
-            {children}
-          </Text>
-        ),
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Signals',
-          // The logo's ripple, as a mark: three rings.
-          tabBarIcon: ({ color }) => <RingsIcon color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="trades"
-        options={{
-          title: 'Trades',
-          tabBarIcon: ({ color, size }) => (
-            <Glyph glyph={{ family: 'mci', name: 'swap-vertical' }} size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="timeline"
-        options={{
-          title: 'Timeline',
-          tabBarIcon: ({ color, size }) => (
-            <Glyph glyph={{ family: 'mci', name: 'chart-timeline-variant' }} size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="watchlist"
-        options={{
-          title: 'Watchlist',
-          tabBarIcon: ({ color, size }) => <Ionicons name="bookmark-outline" size={size - 2} color={color} />,
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: 'Signals' }} />
+      <Tabs.Screen name="trades" options={{ title: 'Trades' }} />
+      <Tabs.Screen name="timeline" options={{ title: 'Timeline' }} />
+      <Tabs.Screen name="watchlist" options={{ title: 'Watchlist' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>
-  );
-}
-
-/** Three concentric rings, drawn rather than borrowed from an icon font. */
-function RingsIcon({ color }: { color: ColorValue }) {
-  return (
-    <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
-      {[20, 12, 4].map((d) => (
-        <View
-          key={d}
-          style={{
-            position: 'absolute',
-            width: d,
-            height: d,
-            borderRadius: d / 2,
-            borderWidth: 1.75,
-            borderColor: color,
-          }}
-        />
-      ))}
-    </View>
   );
 }
 

@@ -12,7 +12,7 @@
  */
 
 /** Registered signal sources. Widen this union to add one. */
-export type SourceId = 'congress' | 'insider' | 'policy' | 'stocks';
+export type SourceId = 'congress' | 'insider' | 'policy' | 'stocks' | 'funds';
 
 /** How live a provider's data currently is. Surfaced in the UI as a tag. */
 export type ProviderMode =
@@ -100,6 +100,72 @@ export interface Signal {
    * instead of parsing `+3.12pp vs SPY` back out of a string.
    */
   reaction?: SignalReaction | null;
+
+  /**
+   * A fund's quarterly 13F, in fields: what it held and what changed since its
+   * previous one. Only Funds signals carry it.
+   */
+  holdings?: FundFiling | null;
+}
+
+/** One 13F filing: a fund's US stock holdings at a quarter's end. */
+export interface FundFiling {
+  /** `13F-HR`, or `13F-NT` when another manager reported the holdings. */
+  form: string;
+  /** Quarter end, `YYYY-MM-DD`. */
+  period: string;
+  /** Total reported value in dollars. Null for a notice, which lists nothing. */
+  totalValue: number | null;
+  /** The previous filing's total, when there was one to compare. */
+  priorValue: number | null;
+  /** Every position in the filing, before the caps below. */
+  positionCount: number;
+  /** Largest first, capped so a fund with thousands of lines stays small. */
+  positions: FundPosition[];
+  /** Changes since the previous filing, biggest dollar move first, capped. */
+  moves: FundMove[];
+  /** True when the filing was too large to read in full on a phone. */
+  truncated: boolean;
+}
+
+export interface FundPosition {
+  /** Issuer as filed: `AMAZON COM INC`. */
+  issuer: string;
+  /** Matched from the issuer's name when the match is unambiguous. */
+  ticker: string | null;
+  /** Share class as filed: `COM`, `CAP STK CL C`. */
+  classTitle: string;
+  cusip: string;
+  /** Options are reported separately from the stock itself. */
+  putCall: 'PUT' | 'CALL' | null;
+  /** Dollars, at quarter end. */
+  value: number;
+  shares: number;
+  /** Share of the filing's total value, 0..1. */
+  weight: number;
+}
+
+export type FundMoveKind = 'new' | 'added' | 'trimmed' | 'exited' | 'unchanged';
+
+/**
+ * One position's change between two filings.
+ *
+ * `kind` follows the shares, not the dollars: a stake trimmed into a rising
+ * price is "trimmed" though its value went up. `value`, `shares` and `weight`
+ * are the after side, zero for an exit.
+ */
+export interface FundMove extends FundPosition {
+  kind: FundMoveKind;
+  valueBefore: number;
+  sharesBefore: number;
+  /** Null for a new position, which has nothing to compare against. */
+  sharesChangePct: number | null;
+  /**
+   * What the stock did from the day the filing went public to the latest
+   * close, and against the S&P 500 over the same sessions. Only on the newest
+   * filing's biggest moves, and only where the position has a ticker.
+   */
+  sinceFiling?: { changePct: number; excessPct: number | null; sessions: number } | null;
 }
 
 /** The transaction behind a signal, in fields rather than prose. */
@@ -151,6 +217,47 @@ export interface SignalReaction {
   /** Trading sessions the measurement spans. */
   sessions: number;
   benchmarkSymbol?: string | null;
+}
+
+/** Where a subject posts in public. `website` is their own site. */
+export type SocialPlatform =
+  | 'x'
+  | 'truth'
+  | 'instagram'
+  | 'facebook'
+  | 'youtube'
+  | 'threads'
+  | 'bluesky'
+  | 'mastodon'
+  | 'tiktok'
+  | 'website';
+
+/** One public account, ready to open. */
+export interface SocialLink {
+  platform: SocialPlatform;
+  /** As it should read on screen: `@RepAmata`, `cantwell.senate.gov`. */
+  handle: string;
+  url: string;
+  /**
+   * Whose account this is, when it is not the subject's own — the White House
+   * subject links the President's account as well as its own.
+   */
+  owner?: string | null;
+}
+
+/**
+ * Who a subject is beyond their filings: a few facts and where they post.
+ *
+ * Separate from `SubjectResult` because it is fetched on the subject's own page
+ * only, and may cost a request the add-flow and the feed have no use for.
+ */
+export interface SubjectProfile {
+  /** Short lines under the heading: `Senate · WA`, `In Congress since 1993`. */
+  facts: string[];
+  /** Official site first, then social accounts. */
+  links: SocialLink[];
+  /** Where the links come from, shown under them for honesty. */
+  provenance: string;
 }
 
 /** One row in the add-subject autocomplete list. */
@@ -218,6 +325,16 @@ export interface Provider<Raw = unknown> extends SourceDescriptor {
    * can tell "not a group" from "a group with nobody in it yet".
    */
   groupMembers?(handle: string, signal?: AbortSignal): Promise<SubjectResult[] | null>;
+
+  /**
+   * Facts and public accounts for one subject, for its profile card.
+   *
+   * Optional. Resolves `null` when the source knows nothing more about this
+   * handle — a group, or a company with no curated accounts — so the card is
+   * simply left out. Must not throw for a network failure: a missing profile
+   * costs the card, never the page.
+   */
+  profile?(handle: string, signal?: AbortSignal): Promise<SubjectProfile | null>;
 
   /** Whether this provider currently has what it needs to return real data. */
   mode(): ProviderMode;

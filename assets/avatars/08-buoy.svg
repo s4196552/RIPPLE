@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Buoy">
+  <circle cx="128" cy="128" r="128" fill="#8E2C6E"/>
+  <path d="M128 126V172" stroke="#FCE8EF" fill="none" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="128" cy="100" r="30" fill="#FCE8EF"/>
+  <path d="M96 100H160" stroke="#8E2C6E" stroke-width="9"/>
+  <path d="M52 180q19 -12 38 0t38 0t38 0t38 0" stroke="#FCE8EF" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

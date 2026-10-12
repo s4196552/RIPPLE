@@ -21,8 +21,10 @@ import type { SourceId, SubjectResult } from '@/providers/types';
 import { useWatchlist } from '@/store/watchlist';
 import { Avatar } from '@/ui/components/Avatar';
 import { FollowedSheet } from '@/ui/components/FollowedSheet';
+import { MemberPicker } from '@/ui/components/MemberPicker';
 import { FOLLOW_COPY } from '@/ui/followCopy';
 import { groupGlyph } from '@/ui/groupGlyph';
+import { subjectAvatar } from '@/ui/subjectAvatar';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
 import { font, radius, space, tint, type } from '@/ui/theme';
 
@@ -52,6 +54,14 @@ export default function SearchScreen() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [followed, setFollowed] = useState<SubjectResult | null>(null);
+  /** Congress groups opened to show their members. Not persisted. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const toggleExpanded = (handle: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(handle)) next.add(handle);
+      return next;
+    });
 
   const debouncedQuery = useDebounced(query, 250);
   const abortRef = useRef<AbortController | null>(null);
@@ -138,7 +148,13 @@ export default function SearchScreen() {
     ? 'Matches'
     : source === 'congress'
       ? 'Follow a whole party'
-      : 'Suggestions';
+      : source === 'funds'
+        ? 'Well-known funds'
+        : source === 'insider'
+          ? 'Most-watched companies'
+          : source === 'stocks'
+            ? 'Popular tickers'
+            : 'Suggestions';
 
   return (
     <View style={styles.screen}>
@@ -198,6 +214,7 @@ export default function SearchScreen() {
         data={results}
         keyExtractor={(item) => `${item.source}:${item.handle}`}
         keyboardShouldPersistTaps="handled"
+        extraData={{ expanded, subjects }}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           results.length > 0 ? (
@@ -220,57 +237,71 @@ export default function SearchScreen() {
           const sub = party ? withoutParty(item.subtitle) : item.subtitle;
           const first = index === 0;
           const last = index === results.length - 1;
+          // A Congress group opens to its members, with a Follow for each and
+          // one for them all.
+          const canOpen = group !== null && !!provider.groupMembers;
+          const open = canOpen && expanded.has(item.handle);
           return (
             // The list is drawn as one card: each row carries its share of the
-            // border so the FlatList can still recycle rows.
-            <View style={[styles.row, first && styles.rowFirst, last && styles.rowLast, !first && styles.rowRule]}>
-              <Avatar
-                uri={item.avatarUrl}
-                name={item.displayName}
-                glyph={group?.glyph}
-                size={44}
-                square={source === 'stocks' || source === 'insider'}
-              />
-              <View style={styles.rowBody}>
-                <Text style={styles.rowName} numberOfLines={1}>
-                  <Highlighted text={item.displayName} term={term} />
-                </Text>
-                {party || sub ? (
-                  <View style={styles.subLine}>
-                    {party ? (
-                      <View style={styles.party}>
-                        <Text style={styles.partyText}>{party}</Text>
-                      </View>
-                    ) : null}
-                    {sub ? (
-                      <Text style={styles.rowSubtitle} numberOfLines={1}>
-                        {sub}
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : null}
-              </View>
-
-              {following ? (
-                <View
-                  style={styles.following}
-                  accessible
-                  accessibilityLabel={`Following ${item.displayName}`}
-                >
-                  <Ionicons name="checkmark" size={16} color={c.accent} />
-                  <Text style={styles.followText}>Following</Text>
+            // border so the FlatList can still recycle rows. The open toggle and
+            // Follow are siblings, never nested Pressables.
+            <View style={[styles.cell, first && styles.rowFirst, last && styles.rowLast, !first && styles.rowRule]}>
+              <View style={styles.row}>
+                <Avatar {...subjectAvatar(item.source, item.handle, item.avatarUrl)} name={item.displayName} size={44} />
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowName} numberOfLines={1}>
+                    <Highlighted text={item.displayName} term={term} />
+                  </Text>
+                  {party || sub ? (
+                    <View style={styles.subLine}>
+                      {party ? (
+                        <View style={styles.party}>
+                          <Text style={styles.partyText}>{party}</Text>
+                        </View>
+                      ) : null}
+                      {sub ? (
+                        <Text style={styles.rowSubtitle} numberOfLines={1}>
+                          {sub}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
-              ) : (
-                <Pressable
-                  onPress={() => onFollow(item)}
-                  style={({ pressed }) => [styles.follow, pressed && styles.pressed]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Follow ${item.displayName}${item.subtitle ? `, ${item.subtitle}` : ''}`}
-                >
-                  <Ionicons name="add" size={16} color={c.accent} />
-                  <Text style={styles.followText}>Follow</Text>
-                </Pressable>
-              )}
+
+                {canOpen && (
+                  <Pressable
+                    onPress={() => toggleExpanded(item.handle)}
+                    style={styles.toggle}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: open }}
+                    accessibilityLabel={open ? `Hide ${item.displayName} members` : `Show ${item.displayName} members`}
+                  >
+                    <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={20} color={c.textMuted} />
+                  </Pressable>
+                )}
+
+                {following ? (
+                  <View
+                    style={styles.following}
+                    accessible
+                    accessibilityLabel={`Following ${item.displayName}`}
+                  >
+                    <Ionicons name="checkmark" size={16} color={c.accent} />
+                    <Text style={styles.followText}>Following</Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => onFollow(item)}
+                    style={({ pressed }) => [styles.follow, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Follow ${item.displayName}${item.subtitle ? `, ${item.subtitle}` : ''}`}
+                  >
+                    <Ionicons name="add" size={16} color={c.accent} />
+                    <Text style={styles.followText}>Follow</Text>
+                  </Pressable>
+                )}
+              </View>
+              {open && <MemberPicker group={item} />}
             </View>
           );
         }}
@@ -324,19 +355,23 @@ function placeholderFor(source: SourceId): string {
       return 'Topic, or a document type';
     case 'stocks':
       return 'Ticker or company name';
+    case 'funds':
+      return 'Fund, manager or CIK';
   }
 }
 
 function hintFor(source: SourceId): string {
   switch (source) {
     case 'congress':
-      return 'Search matches names and districts (“CA-11”). Only members who have filed a trade disclosure appear.';
+      return 'Open a group to follow its members one by one, or all at once. Search matches names and districts (“CA-11”); only members who have filed a trade disclosure appear.';
     case 'insider':
-      return 'Search a company to follow its executives’ and directors’ Form 4 filings — try NVDA, or “Apple”.';
+      return 'Or search any company to follow its executives’ and directors’ Form 4 filings — try “Costco”, or ORCL.';
     case 'policy':
       return 'Type any topic to watch it across presidential actions — try “tariff”, “semiconductor”, or “energy”.';
     case 'stocks':
-      return 'Start typing a ticker — AAPL, NVDA, BTC-USD — or a company name.';
+      return 'Or type any ticker — HD, ETH-USD — or a company name.';
+    case 'funds':
+      return 'Search a fund or its manager — “Ackman”, “Bridgewater” — or type a CIK. Any manager with over $100M in US stocks files a 13F every quarter.';
   }
 }
 
@@ -452,6 +487,13 @@ const useStyles = makeStyles((c) => ({
     ...type.caption,
     color: c.textSubtle,
   },
+  cell: {
+    backgroundColor: c.surface,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    overflow: 'hidden',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -460,10 +502,13 @@ const useStyles = makeStyles((c) => ({
     paddingVertical: 10,
     paddingLeft: 14,
     paddingRight: space.md,
-    backgroundColor: c.surface,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: c.border,
+  },
+  toggle: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: -space.sm,
   },
   rowFirst: {
     borderTopWidth: StyleSheet.hairlineWidth,

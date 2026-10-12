@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Compass rose">
+  <circle cx="128" cy="128" r="128" fill="#21A1E4"/>
+  <circle cx="128" cy="128" r="56" stroke="#150438" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path fill="#150438" stroke="#150438" stroke-width="4" stroke-linejoin="round" d="M128 44L140.02 115.98L212 128L140.02 140.02L128 212L115.98 140.02L44 128L115.98 115.98Z"/>
+</svg>

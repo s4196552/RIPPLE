@@ -51,4 +51,12 @@ export const FOLLOW_COPY: Record<
     explain: 'Notable price moves and volume spikes on the tickers you track.',
     after: 'Big price moves and volume spikes will appear in Signals.',
   },
+  funds: {
+    pick: 'A fund’s quarterly holdings, and what it changed.',
+    example: 'e.g. Berkshire Hathaway · Bill Ackman',
+    question: 'Which fund?',
+    explain:
+      'Form 13F: the US stocks every large fund held at each quarter’s end, filed up to 45 days later.',
+    after: 'Each quarter’s holdings, and what changed, will appear in Signals when they are filed.',
+  },
 };

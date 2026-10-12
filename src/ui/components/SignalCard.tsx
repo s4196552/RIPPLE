@@ -6,6 +6,7 @@ import { relativeTime, spokenTime } from '@/lib/time';
 import { glyph } from '../icons';
 import { makeStyles, useTheme } from '../ThemeProvider';
 import { font, radius, space, type } from '../theme';
+import { subjectAvatar } from '../subjectAvatar';
 import { spokenLabel } from '../tone';
 import { Avatar } from './Avatar';
 import { Glyph } from './Glyph';
@@ -47,9 +48,8 @@ export const SignalCard = memo(
           accessibilityLabel={`View all signals from ${signal.actor.displayName}`}
         >
           <Avatar
-            uri={signal.actor.avatarUrl}
+            {...subjectAvatar(signal.source, signal.actor.handle, signal.actor.avatarUrl)}
             name={signal.actor.displayName}
-            square={signal.source === 'stocks' || signal.source === 'insider'}
           />
         </Pressable>
 

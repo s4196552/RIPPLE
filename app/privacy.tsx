@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   ALL_RECIPIENTS,
@@ -10,6 +9,7 @@ import {
 } from '@/legal/privacy';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
 import { radius, space, tapSlop, type } from '@/ui/theme';
+import { openLink } from '@/lib/feedback';
 
 /**
  * Privacy Policy.
@@ -53,8 +53,9 @@ export default function PrivacyScreen() {
               afterthought. */}
           {section.id === 'third-parties' && (
             <View style={styles.recipients}>
-              {ALL_RECIPIENTS.map((recipient) => (
-                <RecipientRow key={recipient.host + recipient.name} recipient={recipient} />
+              {/* Indexed: EDGAR is listed under both Insiders and Funds. */}
+              {ALL_RECIPIENTS.map((recipient, i) => (
+                <RecipientRow key={`${i}:${recipient.host}`} recipient={recipient} />
               ))}
             </View>
           )}
@@ -75,11 +76,7 @@ function RecipientRow({ recipient }: { recipient: DataRecipient }) {
   const c = useTheme();
   const styles = useStyles();
   const open = () =>
-    WebBrowser.openBrowserAsync(recipient.policyUrl, {
-      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      toolbarColor: c.bg,
-      controlsColor: c.accent,
-    });
+    openLink(recipient.policyUrl, recipient.name);
 
   return (
     <Pressable

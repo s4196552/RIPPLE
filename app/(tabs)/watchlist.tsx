@@ -3,6 +3,8 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { partyTag, withoutParty } from '@/lib/filing';
+import { OVERLAP_WINDOW_DAYS, fundOverlaps, tradersPhrase } from '@/lib/overlap';
+import type { FundMove } from '@/providers/types';
 import { describe } from '@/providers/registry';
 import { derivedTickerSubjects, isPartyHandle } from '@/store/derived';
 import { useFeed } from '@/store/feed';
@@ -11,14 +13,20 @@ import { Avatar } from '@/ui/components/Avatar';
 import { EmptyState } from '@/ui/components/EmptyState';
 import { GroupMembers } from '@/ui/components/GroupMembers';
 import { WatchActionsSheet } from '@/ui/components/WatchActionsSheet';
-import { groupGlyph } from '@/ui/groupGlyph';
+import { subjectAvatar } from '@/ui/subjectAvatar';
 import { makeStyles, useTheme } from '@/ui/ThemeProvider';
-import { font, radius, space, tint, type } from '@/ui/theme';
+import { font, radius, space, tapSlop, tint, type } from '@/ui/theme';
+import { useTabBarSpace } from '@/ui/components/FloatingTabBar';
+
+/** Height of a ticker chip, for padding its tap area out to 44. */
+const TICKER_CHIP = 22;
 
 /** Manage screen: everything followed, a card per source, with mute and unfollow. */
 export default function WatchlistScreen() {
   const c = useTheme();
   const styles = useStyles();
+  // Room for the last row to scroll clear of the floating tab bar.
+  const tabSpace = useTabBarSpace();
   const router = useRouter();
   const subjects = useWatchlist((s) => s.subjects);
   const remove = useWatchlist((s) => s.remove);
@@ -27,6 +35,7 @@ export default function WatchlistScreen() {
   /** Group rows the user has opened to see their members. Not persisted. */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [acting, setActing] = useState<WatchedSubject | null>(null);
+  const openTicker = (symbol: string) => router.push({ pathname: '/ticker/[symbol]', params: { symbol } });
   const toggleExpanded = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -53,6 +62,10 @@ export default function WatchlistScreen() {
     return tickers.length > 0 ? { tickers, groups } : null;
   }, [subjects, signals]);
 
+  // A followed fund's newest moves that someone in Congress or a company
+  // insider also traded lately.
+  const fundOverlap = useMemo(() => fundOverlaps(signals), [signals]);
+
   if (subjects.length === 0) {
     return (
       <View style={styles.screen}>
@@ -72,36 +85,101 @@ export default function WatchlistScreen() {
         sections={sections}
         keyExtractor={(item) => `${item.source}:${item.handle}`}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: tabSpace }]}
         ListHeaderComponent={
-          overlap ? (
-            <Pressable
-              onPress={() => router.push('/timeline')}
-              style={({ pressed }) => [styles.overlap, pressed && styles.pressedCard]}
-              accessibilityRole="button"
-              accessibilityLabel={
-                `Cross-source overlap. ${possessive(overlap.groups)} most-traded tickers are in your ` +
-                `Insiders and Stocks: ${overlap.tickers.join(', ')}. See on Timeline.`
-              }
-            >
-              <View style={styles.overlapHead}>
-                <Ionicons name="git-merge-outline" size={16} color={c.accent} />
-                <Text style={styles.overlapEyebrow}>Cross-source overlap</Text>
-              </View>
-              <Text style={styles.overlapText}>
-                {possessive(overlap.groups)} most-traded tickers are in your Insiders and Stocks:
-              </Text>
-              <View style={styles.overlapFoot}>
-                {overlap.tickers.map((t) => (
-                  <Text key={t} style={styles.ticker}>
-                    {t}
-                  </Text>
-                ))}
-                <View style={styles.flex} />
-                <Text style={styles.overlapLink}>See on Timeline</Text>
-                <Ionicons name="chevron-forward" size={14} color={c.accent} />
-              </View>
-            </Pressable>
+          overlap || fundOverlap.length > 0 ? (
+            <View style={styles.headerCards}>
+              {overlap ? (
+                // Each ticker opens its own page, and "See on Timeline" is a
+                // button of its own: siblings, so none sits inside another.
+                <View style={styles.overlap}>
+                  <View
+                    accessible
+                    accessibilityLabel={
+                      `Cross-source overlap. ${possessive(overlap.groups)} most-traded tickers are in your ` +
+                      `Insiders and Stocks: ${overlap.tickers.join(', ')}.`
+                    }
+                  >
+                    <View style={styles.overlapHead}>
+                      <Ionicons name="git-merge-outline" size={16} color={c.accent} />
+                      <Text style={styles.overlapEyebrow}>Cross-source overlap</Text>
+                    </View>
+                    <Text style={styles.overlapText}>
+                      {possessive(overlap.groups)} most-traded tickers are in your Insiders and Stocks:
+                    </Text>
+                  </View>
+                  <View style={styles.overlapFoot}>
+                    {overlap.tickers.map((t) => (
+                      <Pressable
+                        key={t}
+                        onPress={() => openTicker(t)}
+                        hitSlop={tapSlop(TICKER_CHIP)}
+                        style={({ pressed }) => [styles.tickerButton, pressed && styles.tickerPressed]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${t}: price and everyone trading it`}
+                      >
+                        <Text style={styles.tickerText}>{t}</Text>
+                      </Pressable>
+                    ))}
+                    <View style={styles.flex} />
+                    <Pressable
+                      onPress={() => router.push('/timeline')}
+                      hitSlop={tapSlop(TICKER_CHIP)}
+                      style={({ pressed }) => [styles.overlapLinkButton, pressed && styles.tickerPressed]}
+                      accessibilityRole="button"
+                      accessibilityLabel="See them on Timeline"
+                    >
+                      <Text style={styles.overlapLink}>See on Timeline</Text>
+                      <Ionicons name="chevron-forward" size={14} color={c.accent} />
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
+
+              {fundOverlap.length > 0 ? (
+                // One card, a row per match; the rows are siblings, never
+                // nested buttons.
+                <View style={styles.overlap}>
+                  <View style={styles.overlapHead}>
+                    <Ionicons name="git-merge-outline" size={16} color={c.accent} />
+                    <Text style={styles.overlapEyebrow}>Funds and the feed</Text>
+                  </View>
+                  {fundOverlap.slice(0, 3).map((o) => (
+                    // The ticker opens the stock, the rest of the row the fund.
+                    <View key={`${o.fundHandle}:${o.ticker}`} style={styles.overlapRow}>
+                      <Pressable
+                        onPress={() => openTicker(o.ticker)}
+                        hitSlop={tapSlop(TICKER_CHIP)}
+                        style={({ pressed }) => [styles.tickerButton, pressed && styles.tickerPressed]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${o.ticker}: price and everyone trading it`}
+                      >
+                        <Text style={styles.tickerText}>{o.ticker}</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() =>
+                          router.push({
+                            pathname: '/subject/[source]/[handle]',
+                            params: { source: 'funds', handle: o.fundHandle },
+                          })
+                        }
+                        style={({ pressed }) => [styles.overlapRowMain, pressed && styles.pressedCard]}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          `${o.fund}: ${FUND_KIND_WORD[o.kind]} ${o.ticker}. Also traded by ${tradersPhrase(o.traders)} ` +
+                          `in the last ${OVERLAP_WINDOW_DAYS} days. Open the fund.`
+                        }
+                      >
+                        <Text style={styles.overlapRowText}>
+                          {o.fund} {FUND_KIND_WORD[o.kind]} it · also traded by {tradersPhrase(o.traders)}
+                        </Text>
+                        <Ionicons name="chevron-forward" size={14} color={c.accent} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </View>
           ) : null
         }
         renderSectionHeader={({ section }) => (
@@ -124,7 +202,6 @@ export default function WatchlistScreen() {
           const key = subjectKey(item.source, item.handle);
           const isGroup = isPartyHandle(item.source, item.handle);
           const open = isGroup && expanded.has(key);
-          const group = groupGlyph(item.source, item.handle);
           const party = partyTag(item.subtitle);
           const sub = party ? withoutParty(item.subtitle) : item.subtitle;
           const first = index === 0;
@@ -157,10 +234,8 @@ export default function WatchlistScreen() {
                 >
                   <View style={item.muted && styles.dim}>
                     <Avatar
-                      uri={item.avatarUrl}
+                      {...subjectAvatar(item.source, item.handle, item.avatarUrl)}
                       name={item.displayName}
-                      glyph={group?.glyph}
-                      square={item.source === 'stocks' || item.source === 'insider'}
                       size={36}
                     />
                   </View>
@@ -257,6 +332,14 @@ export default function WatchlistScreen() {
   );
 }
 
+const FUND_KIND_WORD: Record<FundMove['kind'], string> = {
+  new: 'opened',
+  added: 'added to',
+  trimmed: 'trimmed',
+  exited: 'exited',
+  unchanged: 'held',
+};
+
 /** "Republicans’", "Republicans’ and Democrats’". */
 function possessive(names: readonly string[]): string {
   const owned = names.map((n) => (n.endsWith('s') ? `${n}’` : `${n}’s`));
@@ -285,6 +368,22 @@ const useStyles = makeStyles((c) => ({
   pressedCard: {
     opacity: 0.85,
   },
+  headerCards: {
+    gap: space.sm,
+  },
+  overlapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: 44,
+    marginTop: 4,
+  },
+  overlapRowText: {
+    ...type.label,
+    fontFamily: font.regular,
+    color: c.text,
+    flex: 1,
+  },
   overlapHead: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -308,16 +407,37 @@ const useStyles = makeStyles((c) => ({
     alignItems: 'center',
     gap: 6,
   },
-  ticker: {
-    ...type.mono,
+  overlapRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    alignSelf: 'stretch',
+  },
+  // A ticker chip that opens the stock's page.
+  tickerButton: {
+    height: TICKER_CHIP,
+    justifyContent: 'center',
     paddingHorizontal: 6,
-    paddingVertical: 1,
     borderRadius: 4,
-    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: c.border,
     backgroundColor: c.surface,
+  },
+  tickerPressed: {
+    backgroundColor: c.surfaceAlt,
+  },
+  tickerText: {
+    ...type.mono,
     color: c.text,
+  },
+  overlapLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    height: TICKER_CHIP,
+    paddingHorizontal: 4,
+    borderRadius: 4,
   },
   overlapLink: {
     ...type.label,

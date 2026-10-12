@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Crest">
+  <circle cx="128" cy="128" r="128" fill="#1F0766"/>
+  <path d="M44 184H90C108 184 112 160 116 132C122 92 150 70 180 78C206 86 210 120 188 130C172 137 156 126 162 110" stroke="#E8EEF9" fill="none" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M142 184H212" stroke="#E8EEF9" fill="none" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

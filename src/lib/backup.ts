@@ -71,7 +71,7 @@ export type ParseResult =
   | { ok: true; subjects: BackupSubject[] }
   | { ok: false; error: string };
 
-const SOURCES: SourceId[] = ['congress', 'insider', 'policy', 'stocks'];
+const SOURCES: SourceId[] = ['congress', 'insider', 'policy', 'stocks', 'funds'];
 
 /**
  * Read a backup back, refusing anything it cannot vouch for.

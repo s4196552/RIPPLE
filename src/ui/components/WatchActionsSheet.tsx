@@ -4,7 +4,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { partyTag, withoutParty } from '@/lib/filing';
 import { shortDate } from '@/lib/timeline';
 import type { WatchedSubject } from '@/store/watchlist';
-import { groupGlyph } from '../groupGlyph';
+import { subjectAvatar } from '../subjectAvatar';
 import { makeStyles, useTheme } from '../ThemeProvider';
 import { font, radius, space, type } from '../theme';
 import { Avatar } from './Avatar';
@@ -65,11 +65,9 @@ export function WatchActionsSheet({ subject, onClose, onSaveMute, onUnfollow }: 
           <View style={styles.grabber} />
           <View style={styles.head}>
             <Avatar
-              uri={subject.avatarUrl}
+              {...subjectAvatar(subject.source, subject.handle, subject.avatarUrl)}
               name={subject.displayName}
-              glyph={groupGlyph(subject.source, subject.handle)?.glyph}
               size={44}
-              square={subject.source === 'stocks' || subject.source === 'insider'}
             />
             <View style={styles.headBody}>
               <Text style={styles.name} accessibilityRole="header" numberOfLines={1}>

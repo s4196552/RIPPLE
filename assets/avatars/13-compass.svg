@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Compass">
+  <circle cx="128" cy="128" r="128" fill="#3B1238"/>
+  <circle cx="128" cy="128" r="84" stroke="#F6C9DA" fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M128 52V64M204 128H192M128 204V192M52 128H64" stroke="#F6C9DA" fill="none" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path fill="#F6C9DA" stroke="#F6C9DA" stroke-width="5" stroke-linejoin="round" d="M128 72L146 128H110Z"/>
+  <path d="M110 128H146L128 184Z" stroke="#F6C9DA" fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="128" cy="128" r="7" fill="#3B1238" stroke="#F6C9DA" stroke-width="5"/>
+</svg>

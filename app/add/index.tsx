@@ -91,7 +91,7 @@ export default function SourcePickerScreen() {
 
       <Text style={styles.note}>
         Every source is public data. Congress trade filings come from the House Clerk; insider
-        trades from SEC EDGAR; executive actions from the Federal Register.
+        trades and fund holdings from SEC EDGAR; executive actions from the Federal Register.
       </Text>
     </ScrollView>
   );

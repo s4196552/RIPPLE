@@ -88,6 +88,14 @@ const BY_SOURCE: Record<SourceId, DefaultSubject[]> = {
       subtitle: 'NYSE Arca',
     },
   ],
+  funds: [
+    {
+      source: 'funds',
+      handle: '1067983',
+      displayName: 'Berkshire Hathaway',
+      subtitle: 'Warren Buffett · CIK 0001067983',
+    },
+  ],
 };
 
 /**

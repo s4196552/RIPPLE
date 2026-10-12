@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { CONGRESS_SCOPES, PARTY_TONE } from '../src/providers/congress/roster.ts';
-import { groupGlyph } from '../src/ui/groupGlyph.ts';
+import { groupGlyph, subjectGlyph } from '../src/ui/groupGlyph.ts';
 
 const GLYPHMAPS = 'node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/';
 const load = (file: string): Record<string, unknown> => JSON.parse(readFileSync(GLYPHMAPS + file, 'utf8'));
@@ -45,5 +45,39 @@ describe('groupGlyph', () => {
     assert.equal(groupGlyph('congress', 'nancy-pelosi'), null);
     assert.equal(groupGlyph('stocks', 'all'), null);
     assert.equal(groupGlyph('insider', 'party:democrat'), null);
+  });
+});
+
+describe('subjectGlyph', () => {
+  const handles: [Parameters<typeof subjectGlyph>[0], string][] = [
+    ['policy', 'all'],
+    ['policy', 'type:executive_order'],
+    ['policy', 'type:proclamation'],
+    ['policy', 'type:presidential_memorandum'],
+    ['policy', 'type:determination'],
+    ['policy', 'term:tariff'],
+    ['funds', '1067983'],
+  ];
+
+  it('gives policy watches and funds a mark that exists in its font', () => {
+    for (const [source, handle] of handles) {
+      const mark = subjectGlyph(source, handle);
+      assert.ok(mark, `${source}:${handle} has no glyph`);
+      const { glyph } = mark;
+      assert.ok(glyph.name in MAPS[glyph.family], `${glyph.family}:${glyph.name} is not a glyph`);
+      if (glyph.family === 'fa6') assert.ok(FA6_SOLID.has(glyph.name), `${glyph.name} has no solid style`);
+    }
+  });
+
+  it('tells document types apart', () => {
+    const names = new Set(handles.slice(0, 5).map(([s, h]) => subjectGlyph(s, h)!.glyph.name));
+    assert.equal(names.size, 5);
+  });
+
+  it('defers to the group marks for Congress, and leaves tickers to their logos', () => {
+    assert.deepEqual(subjectGlyph('congress', 'party:democrat'), groupGlyph('congress', 'party:democrat'));
+    assert.equal(subjectGlyph('congress', 'nancy-pelosi'), null);
+    assert.equal(subjectGlyph('stocks', 'AAPL'), null);
+    assert.equal(subjectGlyph('insider', 'NVDA'), null);
   });
 });

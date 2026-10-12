@@ -13,6 +13,9 @@
  * party on somebody's trade.
  */
 
+import { orderLinks, socialLink, youtubeChannel } from '../../lib/social.ts';
+import type { SocialLink, SubjectProfile } from '../types.ts';
+
 /** The three parties covering the entire current Congress. */
 export type Party = 'Republican' | 'Democrat' | 'Independent';
 
@@ -31,6 +34,12 @@ export interface Legislator {
   /** House district; 0 for at-large, null for senators. */
   district: number | null;
   chamber: Chamber;
+  /** Official site from the current term, e.g. `www.cantwell.senate.gov`. */
+  website: string | null;
+  /** First day of the member's first term in either chamber, `YYYY-MM-DD`. */
+  firstServed: string | null;
+  /** Last day of the current term, `YYYY-MM-DD`. */
+  termEnds: string | null;
 }
 
 /** The subset of the published JSON this module reads. */
@@ -42,6 +51,9 @@ export interface RawLegislator {
     state?: string;
     district?: number | null;
     party?: string;
+    url?: string;
+    start?: string;
+    end?: string;
   }[];
 }
 
@@ -138,7 +150,18 @@ export function buildRoster(raw: readonly RawLegislator[]): Roster {
     const chamber: Chamber = term?.type === 'sen' ? 'senate' : 'house';
     const district = chamber === 'house' && typeof term?.district === 'number' ? term.district : null;
 
-    const legislator: Legislator = { bioguide, name, surname, party, state, district, chamber };
+    const legislator: Legislator = {
+      bioguide,
+      name,
+      surname,
+      party,
+      state,
+      district,
+      chamber,
+      website: term?.url?.trim() || null,
+      firstServed: entry.terms?.[0]?.start ?? null,
+      termEnds: term?.end ?? null,
+    };
     all.push(legislator);
 
     if (district !== null) byDistrict.set(districtKey(state, district), legislator);
@@ -227,6 +250,80 @@ export function findByName(roster: Roster, fullName: string): Legislator | null 
  */
 export function photoUrl(bioguide: string): string {
   return `https://unitedstates.github.io/images/congress/225x275/${bioguide}.jpg`;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Public accounts
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * One entry of `legislators-social-media.json`, the roster's companion file:
+ * the accounts each sitting member's office runs, keyed by the same bioguide
+ * ID. Maintained by hand by the same project, so it lags a new account by a
+ * few weeks but rarely carries a wrong one.
+ */
+export interface RawSocialEntry {
+  id?: { bioguide?: string };
+  social?: {
+    twitter?: string;
+    facebook?: string;
+    instagram?: string;
+    youtube?: string;
+    youtube_id?: string;
+    mastodon?: string;
+  };
+}
+
+/** Bioguide ID -> that member's accounts, in card order. */
+export function buildSocialIndex(raw: readonly RawSocialEntry[]): Map<string, SocialLink[]> {
+  const index = new Map<string, SocialLink[]>();
+  for (const entry of raw) {
+    const bioguide = entry.id?.bioguide?.trim();
+    const s = entry.social;
+    if (!bioguide || !s) continue;
+    const links = orderLinks([
+      socialLink('x', s.twitter),
+      socialLink('instagram', s.instagram),
+      socialLink('facebook', s.facebook),
+      youtubeChannel(s.youtube_id, s.youtube),
+      socialLink('mastodon', s.mastodon),
+    ]);
+    if (links.length > 0) index.set(bioguide, links);
+  }
+  return index;
+}
+
+/** `2031-01-03` -> `Jan 2031`. Null for anything that is not a date. */
+function monthYear(iso: string | null): string | null {
+  const m = iso?.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  if (!m) return null;
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1];
+  return month ? `${month} ${m[1]}` : null;
+}
+
+/**
+ * A member's profile card: their seat and service, their official site, and
+ * the accounts their office runs.
+ */
+export function legislatorProfile(legislator: Legislator, accounts: readonly SocialLink[]): SubjectProfile {
+  const seat =
+    legislator.chamber === 'senate'
+      ? `Senator for ${legislator.state}`
+      : legislator.district === null || legislator.district === 0
+        ? `Representative for ${legislator.state} (at large)`
+        : `Representative for ${legislator.state}-${legislator.district}`;
+  const since = legislator.firstServed?.slice(0, 4);
+  const ends = monthYear(legislator.termEnds);
+
+  return {
+    facts: [
+      `${seat} · ${legislator.party}`,
+      since ? `In Congress since ${since}` : null,
+      ends ? `Current term ends ${ends}` : null,
+    ].filter((f): f is string => f !== null),
+    links: orderLinks([socialLink('website', legislator.website), ...accounts]),
+    provenance: 'Official accounts from the @unitedstates congress-legislators project',
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────

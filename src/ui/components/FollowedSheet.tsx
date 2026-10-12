@@ -4,7 +4,7 @@ import { AccessibilityInfo, Modal, Pressable, StyleSheet, Text, View } from 'rea
 import { partyTag, withoutParty } from '@/lib/filing';
 import type { SubjectResult } from '@/providers/types';
 import { FOLLOW_COPY } from '../followCopy';
-import { groupGlyph } from '../groupGlyph';
+import { subjectAvatar } from '../subjectAvatar';
 import { makeStyles, useTheme } from '../ThemeProvider';
 import { font, type } from '../theme';
 import { Avatar } from './Avatar';
@@ -34,7 +34,6 @@ export function FollowedSheet({ subject, onDone, onFollowAnother, onDismiss }: P
   if (!subject) return null;
   const party = partyTag(subject.subtitle);
   const place = withoutParty(subject.subtitle);
-  const group = groupGlyph(subject.source, subject.handle);
 
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onDismiss}>
@@ -57,11 +56,9 @@ export function FollowedSheet({ subject, onDone, onFollowAnother, onDismiss }: P
             <View style={styles.outerRing} />
             <View style={styles.innerRing} />
             <Avatar
-              uri={subject.avatarUrl}
+              {...subjectAvatar(subject.source, subject.handle, subject.avatarUrl)}
               name={subject.displayName}
-              glyph={group?.glyph}
               size={64}
-              square={subject.source === 'stocks' || subject.source === 'insider'}
             />
             <View style={styles.tick}>
               <Ionicons name="checkmark" size={15} color={c.onAccent} />

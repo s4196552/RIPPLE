@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Moon tide">
+  <circle cx="128" cy="128" r="128" fill="#150438"/>
+  <circle cx="128" cy="94" r="40" fill="#F1E3C6"/>
+  <circle cx="148" cy="80" r="34" fill="#150438"/>
+  <path d="M56 172q18 -18 36 0t36 0t36 0t36 0" stroke="#F1E3C6" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

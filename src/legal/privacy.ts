@@ -35,7 +35,7 @@ export interface PrivacySection {
 }
 
 /** Bumped whenever any wording below changes. Shown at the top of the screen. */
-export const PRIVACY_EFFECTIVE_DATE = 'September 4, 2026';
+export const PRIVACY_EFFECTIVE_DATE = 'October 12, 2026';
 
 /**
  * Deliberately the same value the terms use, rather than a second placeholder.
@@ -83,6 +83,15 @@ export const PRIVACY_RECIPIENTS: Record<SourceId, DataRecipient[]> = {
         'https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement',
     },
     {
+      // Android cannot show a PDF in an app's web view, so trade disclosures
+      // open in a pdf.js viewer whose code comes from this CDN. The document
+      // itself is fetched from the House Clerk and never sent here.
+      name: 'jsDelivr (PDF viewer, Android only)',
+      host: 'cdn.jsdelivr.net',
+      receives: 'your IP address when a trade disclosure is opened on Android, but not which one',
+      policyUrl: 'https://www.jsdelivr.com/terms/privacy-policy',
+    },
+    {
       name: 'Quiver Quantitative',
       host: 'api.quiverquant.com',
       receives: 'your IP address and the member of Congress being looked up',
@@ -105,6 +114,22 @@ export const PRIVACY_RECIPIENTS: Record<SourceId, DataRecipient[]> = {
       policyUrl: 'https://www.sec.gov/privacy',
     },
   ],
+  funds: [
+    {
+      name: 'U.S. Securities and Exchange Commission (EDGAR)',
+      host: 'sec.gov',
+      receives: 'your IP address and the fund whose filings are requested, or the name typed into fund search',
+      policyUrl: 'https://www.sec.gov/privacy',
+    },
+    {
+      // Logos for well-known funds that have no ticker: the firm's own site
+      // icon, through Google's favicon service.
+      name: 'Google (site icons)',
+      host: 'www.google.com',
+      receives: 'your IP address and the website of the fund whose logo is shown',
+      policyUrl: 'https://policies.google.com/privacy',
+    },
+  ],
   policy: [
     {
       name: 'Federal Register',
@@ -119,6 +144,14 @@ export const PRIVACY_RECIPIENTS: Record<SourceId, DataRecipient[]> = {
       host: 'query1.finance.yahoo.com',
       receives: 'your IP address and the ticker symbol being priced',
       policyUrl: 'https://legal.yahoo.com/us/en/yahoo/privacy/index.html',
+    },
+    {
+      // Company logos load by ticker with no key, for every company and
+      // ticker row in Insiders, Stocks and Funds — unlike the keyed trade data above, this is not optional.
+      name: 'Financial Modeling Prep (company logos)',
+      host: 'images.financialmodelingprep.com',
+      receives: 'your IP address and the ticker whose logo is shown',
+      policyUrl: 'https://site.financialmodelingprep.com/privacy-policy',
     },
     {
       name: 'Finnhub',
@@ -148,6 +181,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     title: '2. What stays on your device',
     body: [
       'Your watchlist - which members of Congress, companies and policy topics you follow, and which of them are paused - is stored on your device.',
+      'If you add a profile photo, the app keeps its own copy of the one image you pick, on your device. It is not uploaded, and removing it from the Profile tab deletes that copy.',
       'A copy of recent signals is cached on the device so the app opens on what you last saw instead of a loading spinner. Nothing about which signals you opened, shared, or scrolled past is recorded at all.',
       'None of this leaves the device. It is not backed up to us, because there is no server to back it up to. If your device operating system backup includes app data, that copy is governed by your own backup settings rather than by this app.',
     ],
@@ -158,7 +192,8 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     body: [
       'Ripple calls public APIs directly from your device rather than routing them through a server. That design keeps your watchlist private - nobody, including the developer, ever receives it - but it means each service sees the individual requests your device makes to it.',
       'What they receive is an ordinary web request: your IP address, your network user agent, and the specific subject being requested. None of these requests carry your name, your watchlist as a whole, an advertising identifier, or any account, because the app has none of those things to send.',
-      'The services below are the complete set. Those marked optional are contacted only if an API key has been configured in this build.',
+      'Links you choose to open - an original filing, or the website or social media account on a subject’s profile card - take you to that site in a browser, under that site’s own privacy policy. Nothing is sent to those sites unless you tap the link.',
+      'The services below are the complete set the app contacts on its own. Those marked optional are contacted only if an API key has been configured in this build.',
     ],
   },
   {

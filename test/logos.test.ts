@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { logoUrl } from '../src/providers/logos.ts';
+import { logoUrl, siteIconUrl } from '../src/providers/logos.ts';
 
 describe('logoUrl', () => {
   it('addresses a logo by ticker alone, with no API call', () => {
@@ -42,5 +42,19 @@ describe('logoUrl', () => {
     assert.equal(url.startsWith('https://images.financialmodelingprep.com/symbol/'), true);
     assert.equal(url.includes('?x='), false, 'a query string must not survive');
     assert.equal(url.includes('/B'), false, 'a path separator must not survive');
+  });
+});
+
+describe('siteIconUrl', () => {
+  it('asks for the large icon of a bare domain', () => {
+    assert.equal(
+      siteIconUrl('Bridgewater.com '),
+      'https://www.google.com/s2/favicons?sz=128&domain=bridgewater.com',
+    );
+  });
+
+  it('is null for nothing to look up', () => {
+    assert.equal(siteIconUrl(''), null);
+    assert.equal(siteIconUrl(null), null);
   });
 });

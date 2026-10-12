@@ -12,6 +12,14 @@
  * Pure, no imports, unit-tested directly.
  */
 
+/**
+ * Namespace prefixes removed from every tag, so `<ns1:infoTable>` reads as
+ * `<infoTable>`: the readers below match tag names exactly.
+ */
+export function stripNamespaces(xml: string): string {
+  return xml.replace(/<(\/?)[\w.-]+:/g, '<$1');
+}
+
 /** First value of `<name>…</name>`, trimmed. Null when absent. */
 export function tag(name: string, xml: string): string | null {
   const m = xml.match(new RegExp(`<${name}[^>]*>([^]*?)</${name}>`));

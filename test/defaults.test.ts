@@ -23,7 +23,7 @@ describe('DEFAULT_SUBJECTS', () => {
 
   it('covers every registered source, so no filter chip opens onto nothing', () => {
     const sources = new Set(DEFAULT_SUBJECTS.map((s) => s.source));
-    assert.deepEqual([...sources].sort(), ['congress', 'insider', 'policy', 'stocks']);
+    assert.deepEqual([...sources].sort(), ['congress', 'funds', 'insider', 'policy', 'stocks']);
   });
 
   it('holds no duplicate subject', () => {
